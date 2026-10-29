@@ -16,17 +16,45 @@
                         document.documentElement.classList.add('dark');
                     }
                 }
+
+                // Saved colour theme (resources/js/hooks/use-color-theme.tsx), added
+                // before paint so Vercel / Notion never flash the Fiori colours.
+                try {
+                    const theme = localStorage.getItem('color-theme');
+
+                    if (theme === 'vercel' || theme === 'notion') {
+                        document.documentElement.classList.add('theme-' + theme);
+                    }
+                } catch (e) {
+                    // Storage blocked: the default theme is used.
+                }
             })();
         </script>
 
         {{-- Inline style to set the HTML background color based on our theme in app.css --}}
         <style>
             html {
-                background-color: oklch(1 0 0);
+                background-color: #ffffff;
             }
 
             html.dark {
-                background-color: oklch(0.145 0 0);
+                background-color: #12171c;
+            }
+
+            html.theme-vercel {
+                background-color: #fafafa;
+            }
+
+            html.theme-vercel.dark {
+                background-color: #0a0a0a;
+            }
+
+            html.theme-notion {
+                background-color: #f6f5f4;
+            }
+
+            html.theme-notion.dark {
+                background-color: #191919;
             }
         </style>
 

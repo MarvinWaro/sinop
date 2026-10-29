@@ -1,0 +1,325 @@
+import { Head, Link, router } from '@inertiajs/react';
+import { ArrowLeft, FileSpreadsheet, Package } from 'lucide-react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { EmptyState } from '@/components/empty-state';
+import { PageContainer, PageHeader } from '@/components/page-header';
+import { StatCard } from '@/components/stat-card';
+import { TablePanel } from '@/components/table-panel';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableFooter,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
+import { useCan } from '@/hooks/use-can';
+import { formatMoney, formatNumber, toNumber } from '@/lib/format';
+import { exportExcel, generate, index as rpciIndex } from '@/routes/rpci';
+
+type ReportRow = {
+    supply_id: number;
+    stock_no: string;
+    item_name: string;
+    description: string | null;
+    unit: string;
+    fund_cluster: string | null;
+    book_quantity: number;
+    unit_cost: number | string;
+};
+
+type Props = {
+    reportData: ReportRow[];
+    summary: { total_items: number; total_book_value: number | string };
+    year: number;
+    semester: string;
+    startDate: string;
+    endDate: string;
+    periodLabel: string;
+    asOfLabel: string;
+    entityName: string;
+    fundCluster: string | null;
+    departmentId: number | string | null;
+    availableYears: (number | string)[];
+    fundClusters: string[];
+};
+
+const semesterLabel = (semester: string) => (semester === '1' ? '1st' : '2nd');
+
+export default function RpciReport(props: Props) {
+    const can = useCan();
+    const { reportData, summary, fundCluster } = props;
+    const years =
+        props.availableYears.length > 0 ? props.availableYears : [props.year];
+    const [year, setYear] = useState(String(props.year));
+    const [semester, setSemester] = useState(props.semester);
+    const [cluster, setCluster] = useState(fundCluster ?? '');
+
+    const apply = (event: FormEvent) => {
+        event.preventDefault();
+        router.get(generate.url(), { year, semester, fund_cluster: cluster });
+    };
+
+    const exportQuery = {
+        year: props.year,
+        semester: props.semester,
+        fund_cluster: fundCluster ?? '',
+        department_id: props.departmentId ?? '',
+    };
+
+    const columns = fundCluster ? 5 : 6;
+
+    return (
+        <>
+            <Head
+                title={`RPCI ${semesterLabel(props.semester)} semester ${props.year}`}
+            />
+            <PageContainer>
+                <PageHeader
+                    title={`RPCI – ${semesterLabel(props.semester)} semester ${props.year}`}
+                    description={
+                        fundCluster
+                            ? `Fund cluster ${fundCluster}`
+                            : 'All fund clusters'
+                    }
+                    actions={
+                        <>
+                            <Button asChild variant="outline">
+                                <Link href={rpciIndex()}>
+                                    <ArrowLeft />
+                                    Back to RPCI
+                                </Link>
+                            </Button>
+                            {can('rpci.export') && (
+                                <Button asChild>
+                                    <a
+                                        href={exportExcel.url({
+                                            query: exportQuery,
+                                        })}
+                                    >
+                                        <FileSpreadsheet />
+                                        Export Excel
+                                    </a>
+                                </Button>
+                            )}
+                        </>
+                    }
+                />
+
+                <Card className="py-4">
+                    <CardContent className="px-4">
+                        <form
+                            onSubmit={apply}
+                            className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                        >
+                            <div className="grid gap-2">
+                                <Label htmlFor="filter_year">Year</Label>
+                                <NativeSelect
+                                    id="filter_year"
+                                    value={year}
+                                    onChange={(e) => setYear(e.target.value)}
+                                >
+                                    {years.map((y) => (
+                                        <option key={y} value={y}>
+                                            {y}
+                                        </option>
+                                    ))}
+                                </NativeSelect>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="filter_semester">
+                                    Semester
+                                </Label>
+                                <NativeSelect
+                                    id="filter_semester"
+                                    value={semester}
+                                    onChange={(e) =>
+                                        setSemester(e.target.value)
+                                    }
+                                >
+                                    <option value="1">
+                                        1st semester (Jan – Jun)
+                                    </option>
+                                    <option value="2">
+                                        2nd semester (Jul – Dec)
+                                    </option>
+                                </NativeSelect>
+                            </div>
+                            <div className="grid gap-2">
+                                <Label htmlFor="filter_fund_cluster">
+                                    Fund cluster
+                                </Label>
+                                <NativeSelect
+                                    id="filter_fund_cluster"
+                                    value={cluster}
+                                    onChange={(e) => setCluster(e.target.value)}
+                                >
+                                    <option value="">All fund clusters</option>
+                                    {props.fundClusters.map((fc) => (
+                                        <option key={fc} value={fc}>
+                                            Fund cluster {fc}
+                                        </option>
+                                    ))}
+                                </NativeSelect>
+                            </div>
+                            <Button type="submit" variant="secondary">
+                                Apply filters
+                            </Button>
+                        </form>
+                    </CardContent>
+                </Card>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <StatCard
+                        title="Total items"
+                        value={formatNumber(summary.total_items)}
+                    />
+                    <StatCard
+                        title="Total book value"
+                        value={`₱${formatMoney(summary.total_book_value, 4)}`}
+                    />
+                </div>
+
+                <Card>
+                    <CardHeader className="text-center">
+                        <CardTitle>
+                            Report on the Physical Count of Inventories
+                        </CardTitle>
+                        <CardDescription>
+                            {props.entityName}
+                            <br />
+                            {fundCluster
+                                ? `Fund cluster ${fundCluster}`
+                                : 'All fund clusters'}{' '}
+                            · {semesterLabel(props.semester)} semester{' '}
+                            {props.year} (as of {props.asOfLabel})
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <TablePanel flush>
+                            <Table>
+                                <TableHeader>
+                                    <TableRow>
+                                        <TableHead>Stock no.</TableHead>
+                                        {!fundCluster && (
+                                            <TableHead>Fund cluster</TableHead>
+                                        )}
+                                        <TableHead>Item description</TableHead>
+                                        <TableHead>Unit</TableHead>
+                                        <TableHead className="text-right">
+                                            Unit value
+                                        </TableHead>
+                                        <TableHead className="text-right">
+                                            Balance per card (qty.)
+                                        </TableHead>
+                                    </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                    {reportData.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={columns}>
+                                                <EmptyState
+                                                    icon={Package}
+                                                    title="No inventory data found for the selected criteria."
+                                                />
+                                            </TableCell>
+                                        </TableRow>
+                                    ) : (
+                                        reportData.map((row, index) => (
+                                            <TableRow
+                                                key={`${row.supply_id}-${row.fund_cluster ?? ''}-${index}`}
+                                            >
+                                                <TableCell className="font-mono">
+                                                    {row.stock_no}
+                                                </TableCell>
+                                                {!fundCluster && (
+                                                    <TableCell>
+                                                        <Badge variant="outline">
+                                                            {row.fund_cluster ??
+                                                                'N/A'}
+                                                        </Badge>
+                                                    </TableCell>
+                                                )}
+                                                <TableCell className="whitespace-normal">
+                                                    {row.item_name}
+                                                    {row.description
+                                                        ? `, ${row.description}`
+                                                        : ''}
+                                                </TableCell>
+                                                <TableCell>
+                                                    {row.unit}
+                                                </TableCell>
+                                                <TableCell className="text-right tabular-nums">
+                                                    ₱
+                                                    {formatMoney(
+                                                        row.unit_cost,
+                                                        4,
+                                                    )}
+                                                </TableCell>
+                                                <TableCell className="text-right font-medium tabular-nums">
+                                                    {formatNumber(
+                                                        row.book_quantity,
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                                {reportData.length > 0 && (
+                                    <TableFooter>
+                                        <TableRow>
+                                            <TableCell
+                                                colSpan={columns - 1}
+                                                className="text-right"
+                                            >
+                                                Total book value
+                                            </TableCell>
+                                            <TableCell className="text-right tabular-nums">
+                                                ₱
+                                                {formatMoney(
+                                                    toNumber(
+                                                        summary.total_book_value,
+                                                    ),
+                                                    4,
+                                                )}
+                                            </TableCell>
+                                        </TableRow>
+                                    </TableFooter>
+                                )}
+                            </Table>
+                        </TablePanel>
+                    </CardContent>
+                </Card>
+            </PageContainer>
+        </>
+    );
+}
+
+RpciReport.layout = (props: Props) => ({
+    breadcrumbs: [
+        { title: 'RPCI', href: rpciIndex() },
+        {
+            title: `${semesterLabel(props.semester)} semester ${props.year}`,
+            href: generate({
+                query: {
+                    year: props.year,
+                    semester: props.semester,
+                    fund_cluster: props.fundCluster ?? '',
+                },
+            }),
+        },
+    ],
+});

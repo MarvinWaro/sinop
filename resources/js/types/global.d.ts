@@ -1,4 +1,8 @@
-import type { Auth } from '@/types/auth';
+import type {
+    Auth,
+    BroadcastingConfig,
+    NotificationCounts,
+} from '@/types/auth';
 
 declare module 'react' {
     interface InputHTMLAttributes<T> {
@@ -11,6 +15,8 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            notifications: NotificationCounts | null;
+            broadcasting: BroadcastingConfig;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

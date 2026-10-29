@@ -12,10 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->text('two_factor_secret')->after('password')->nullable();
-            $table->text('two_factor_recovery_codes')->after('two_factor_secret')->nullable();
-            $table->timestamp('two_factor_confirmed_at')->after('two_factor_recovery_codes')->nullable();
+            $table->unsignedBigInteger('department_id')->nullable()->after('role');
+            $table->foreign('department_id')->references('id')->on('departments')->onDelete('set null');
         });
+
     }
 
     /**
@@ -24,11 +24,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn([
-                'two_factor_secret',
-                'two_factor_recovery_codes',
-                'two_factor_confirmed_at',
-            ]);
+            $table->dropForeign(['department_id']);
+            $table->dropColumn('department_id');
         });
     }
 };

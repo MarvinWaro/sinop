@@ -2,6 +2,7 @@ import { createInertiaApp } from '@inertiajs/react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
+import { initializeColorTheme } from '@/hooks/use-color-theme';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
@@ -32,9 +33,10 @@ void createInertiaApp({
         );
     },
     progress: {
-        color: '#4B5563',
+        color: '#0057d2',
     },
 });
 
 // This will set light / dark mode on load...
 initializeTheme();
+initializeColorTheme();

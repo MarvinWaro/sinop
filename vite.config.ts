@@ -13,8 +13,15 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.tsx'],
             refresh: true,
             fonts: [
-                bunny('Instrument Sans', {
-                    weights: [400, 500, 600],
+                bunny('Inter', {
+                    weights: [400, 500, 600, 700],
+                }),
+                // Vercel theme (resources/js/lib/themes.ts).
+                bunny('Geist', {
+                    weights: [400, 500, 600, 700],
+                }),
+                bunny('Geist Mono', {
+                    weights: [400, 500],
                 }),
             ],
         }),
