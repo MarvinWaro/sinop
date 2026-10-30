@@ -33,6 +33,7 @@ class RisItem extends Model
         return $this->belongsTo(RisSlip::class, 'ris_id', 'ris_id');
     }
 
+    /** @return BelongsTo<Supply, $this> */
     public function supply(): BelongsTo
     {
         return $this->belongsTo(Supply::class, 'supply_id', 'supply_id');

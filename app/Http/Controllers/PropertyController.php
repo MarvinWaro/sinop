@@ -8,13 +8,13 @@ use App\Models\Role;
 use App\Models\User; // Using User model now
 use App\Services\ActivityRecorder;
 use App\Services\Notifier;
+use App\Support\Uploads;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Endroid\QrCode\Logo\Logo;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter; // PDF facade
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class PropertyController extends Controller
@@ -252,7 +252,7 @@ class PropertyController extends Controller
 
         if ($excludedProperty) {
             foreach ($excludedProperty->images as $image) {
-                Storage::disk('public')->delete($image->file_path);
+                Uploads::disk()->delete($image->file_path);
                 $image->delete();
             }
 
@@ -278,7 +278,7 @@ class PropertyController extends Controller
             if ($request->hasFile('images')) {
                 foreach ($request->file('images') as $image) {
                     $filename = time().'_'.uniqid().'.'.$image->getClientOriginalExtension();
-                    $path = $image->storeAs('property_images', $filename, 'public');
+                    $path = $image->storeAs('property_images', $filename, Uploads::diskName());
                     $excludedProperty->images()->create([
                         'file_path' => $path,
                     ]);
@@ -313,7 +313,7 @@ class PropertyController extends Controller
         if ($request->hasFile('images')) {
             foreach ($request->file('images') as $image) {
                 $filename = time().'_'.uniqid().'.'.$image->getClientOriginalExtension();
-                $path = $image->storeAs('property_images', $filename, 'public');
+                $path = $image->storeAs('property_images', $filename, Uploads::diskName());
                 $property->images()->create([
                     'file_path' => $path,
                 ]);
@@ -399,7 +399,7 @@ class PropertyController extends Controller
 
         if ($request->remove_existing_images == '1') {
             foreach ($property->images as $image) {
-                Storage::disk('public')->delete($image->file_path);
+                Uploads::disk()->delete($image->file_path);
                 $image->delete();
             }
         }
@@ -407,7 +407,7 @@ class PropertyController extends Controller
         if ($request->hasFile('images')) {
             foreach ($request->file('images') as $image) {
                 $filename = time().'_'.uniqid().'.'.$image->getClientOriginalExtension();
-                $path = $image->storeAs('property_images', $filename, 'public');
+                $path = $image->storeAs('property_images', $filename, Uploads::diskName());
                 $property->images()->create([
                     'file_path' => $path,
                 ]);

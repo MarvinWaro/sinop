@@ -13,9 +13,15 @@ use App\Models\SupplyTransaction;
 use App\Models\User;
 use App\Services\Notifier;
 use App\Services\ReferenceNumberService; // <-- ADD THIS IMPORT
+use App\Support\ExcelDownload;
 use App\Support\RisActivity;
+use App\Support\RisDocument;
 use App\Support\RisSignatory;
+use App\Support\RisSignatureBox;
+use App\Support\RisSignaturePlacement;
+use App\Support\Uploads;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -30,7 +36,8 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use Throwable;
 
 class RisSlipController extends Controller
 {
@@ -265,7 +272,8 @@ class RisSlipController extends Controller
             'supplies.*.supply_id' => 'required|exists:supplies,supply_id',
             'supplies.*.quantity' => 'required|integer|min:1',
             'signature_type' => 'required|in:esign,sgd',
-        ]);
+            ...RisSignaturePlacement::rules($request->user()),
+        ], RisSignaturePlacement::messages());
 
         $maxAttempts = 5;
         $attempt = 0;
@@ -305,6 +313,10 @@ class RisSlipController extends Controller
                         'status' => 'draft',
                     ]);
 
+                    if ($validated['signature_type'] === 'esign') {
+                        RisSignaturePlacement::record($risSlip, 'requested', Auth::user(), $validated['signature']);
+                    }
+
                     // Create RIS Items
                     foreach ($validated['supplies'] as $item) {
                         $stockAvailable = SupplyStock::where('supply_id', $item['supply_id'])
@@ -324,7 +336,8 @@ class RisSlipController extends Controller
                     // Tell whoever approves (live signal goes out after the response).
                     app(Notifier::class)->risSubmitted($entry);
 
-                    return back()->with('success', 'Requisition created successfully with RIS# '.$newRisNumber);
+                    // Back to the list (the request page is done with).
+                    return redirect()->route('staff.requests')->with('success', 'Requisition created successfully with RIS# '.$newRisNumber);
                 }, 3);
             } catch (\Exception $e) {
                 // Retry only for RIS number conflict
@@ -503,6 +516,7 @@ class RisSlipController extends Controller
             'receiver.designation',
             'decliner',
             'items.supply',
+            'signatures',
         ]);
 
         // Calculate availability for each item across all fund clusters
@@ -564,15 +578,22 @@ class RisSlipController extends Controller
         $validated = $request->validate([
             'fund_cluster' => 'nullable|string',
             'signature_type' => 'required|in:esign,sgd',
-        ]);
+            ...RisSignaturePlacement::rules($request->user()),
+        ], RisSignaturePlacement::messages());
 
-        $risSlip->update([
-            'status' => 'approved',
-            'approved_by' => Auth::id(),
-            'approved_at' => now(),
-            'approver_signature_type' => $validated['signature_type'],
-            'fund_cluster' => $validated['fund_cluster'] ?? $risSlip->fund_cluster,
-        ]);
+        DB::transaction(function () use ($risSlip, $validated) {
+            $risSlip->update([
+                'status' => 'approved',
+                'approved_by' => Auth::id(),
+                'approved_at' => now(),
+                'approver_signature_type' => $validated['signature_type'],
+                'fund_cluster' => $validated['fund_cluster'] ?? $risSlip->fund_cluster,
+            ]);
+
+            if ($validated['signature_type'] === 'esign') {
+                RisSignaturePlacement::record($risSlip, 'approved', Auth::user(), $validated['signature']);
+            }
+        });
 
         $entry = RisActivity::record(ActivityAction::Approved, $risSlip);
 
@@ -658,7 +679,8 @@ class RisSlipController extends Controller
             'items.*.remarks' => 'nullable|string|max:500',
             'received_by' => 'required|exists:users,id',  // Made required
             'signature_type' => 'required|in:esign,sgd',
-        ]);
+            ...RisSignaturePlacement::rules($request->user()),
+        ], RisSignaturePlacement::messages());
 
         return DB::transaction(function () use ($validated, $risSlip, $request) {
             $hasIssuedItems = false;
@@ -845,6 +867,10 @@ class RisSlipController extends Controller
                 'received_by' => $request->received_by,
             ]);
 
+            if ($validated['signature_type'] === 'esign') {
+                RisSignaturePlacement::record($risSlip, 'issued', Auth::user(), $validated['signature']);
+            }
+
             $entry = RisActivity::record(ActivityAction::Issued, $risSlip, properties: ['received_by' => User::find($request->received_by)?->name], withStock: true);
 
             // Tell the receiver and the requester, and warn supply staff
@@ -881,7 +907,8 @@ class RisSlipController extends Controller
         // Validate the signature type
         $validated = $request->validate([
             'signature_type' => 'required|in:esign,sgd',
-        ]);
+            ...RisSignaturePlacement::rules($request->user()),
+        ], RisSignaturePlacement::messages());
 
         // Normalize types (some hosts return IDs as strings)
         $currentUserId = (int) auth()->id();
@@ -903,10 +930,16 @@ class RisSlipController extends Controller
         }
 
         // Update the received timestamp with signature type
-        $risSlip->update([
-            'received_at' => now(),
-            'receiver_signature_type' => $validated['signature_type'],
-        ]);
+        DB::transaction(function () use ($risSlip, $validated) {
+            $risSlip->update([
+                'received_at' => now(),
+                'receiver_signature_type' => $validated['signature_type'],
+            ]);
+
+            if ($validated['signature_type'] === 'esign') {
+                RisSignaturePlacement::record($risSlip, 'received', Auth::user(), $validated['signature']);
+            }
+        });
 
         $entry = RisActivity::record(ActivityAction::Received, $risSlip);
 
@@ -917,13 +950,11 @@ class RisSlipController extends Controller
     }
 
     /**
-     * Print the RIS form.
+     * The form as it prints, for the signing preview.
      */
-    public function print(RisSlip $risSlip)
+    public function document(RisSlip $risSlip): JsonResponse
     {
-        $risSlip->load(['department', 'requester', 'approver', 'issuer', 'receiver', 'decliner', 'items.supply']);
-
-        return view('ris.print', compact('risSlip'));
+        return response()->json(RisDocument::of($risSlip));
     }
 
     /**
@@ -1202,119 +1233,29 @@ class RisSlipController extends Controller
         $sheet->getStyle("F{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("H{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        // Requested by (Column C) - IMAGE OR SGD
-        if ($risSlip->requester && $risSlip->requester_signature_type == 'esign' && $risSlip->requester->signature_path) {
-            try {
-                $signaturePath = storage_path('app/public/'.$risSlip->requester->signature_path);
-                if (file_exists($signaturePath)) {
-                    $drawing = new Drawing;
-                    $drawing->setName('Requester Signature');
-                    $drawing->setDescription('Requester Signature');
-                    $drawing->setPath($signaturePath);
-                    $drawing->setHeight(35);
-                    $drawing->setOffsetX(10);
-                    $drawing->setOffsetY(5);
-                    $drawing->setCoordinates("C{$currentRow}");
-                    $drawing->setWorksheet($sheet);
-                } else {
-                    $sheet->setCellValue("C{$currentRow}", 'SGD');
-                    $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-                }
-            } catch (Exception $e) {
-                $sheet->setCellValue("C{$currentRow}", 'SGD');
-                $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-            }
-        } elseif ($risSlip->requester) {
-            $sheet->setCellValue("C{$currentRow}", 'SGD');
-            $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-        }
-        $sheet->getStyle("C{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
-
-        // Approved by (Columns D-E) - IMAGE OR SGD
+        // The signatures: the copy frozen at signing, where the signer placed
+        // it; slips signed before that use the person's current signature.
+        // SGD, or an e-signature with no image, prints "SGD".
         $sheet->mergeCells("D{$currentRow}:E{$currentRow}");
-        if ($risSlip->approved_by && $risSlip->approver_signature_type == 'esign' && $risSlip->approver && $risSlip->approver->signature_path) {
-            try {
-                $signaturePath = storage_path('app/public/'.$risSlip->approver->signature_path);
-                if (file_exists($signaturePath)) {
-                    $drawing = new Drawing;
-                    $drawing->setName('Approver Signature');
-                    $drawing->setDescription('Approver Signature');
-                    $drawing->setPath($signaturePath);
-                    $drawing->setHeight(35);
-                    $drawing->setOffsetX(10);
-                    $drawing->setOffsetY(5);
-                    $drawing->setCoordinates("D{$currentRow}");
-                    $drawing->setWorksheet($sheet);
-                } else {
-                    $sheet->setCellValue("D{$currentRow}", 'SGD');
-                    $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-                }
-            } catch (Exception $e) {
-                $sheet->setCellValue("D{$currentRow}", 'SGD');
-                $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-            }
-        } elseif ($risSlip->approved_by) {
-            $sheet->setCellValue("D{$currentRow}", 'SGD');
-            $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-        }
-        $sheet->getStyle("D{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
-
-        // Issued by (Columns F-G) - IMAGE OR SGD
         $sheet->mergeCells("F{$currentRow}:G{$currentRow}");
-        if ($risSlip->issued_by && $risSlip->issuer_signature_type == 'esign' && $risSlip->issuer && $risSlip->issuer->signature_path) {
-            try {
-                $signaturePath = storage_path('app/public/'.$risSlip->issuer->signature_path);
-                if (file_exists($signaturePath)) {
-                    $drawing = new Drawing;
-                    $drawing->setName('Issuer Signature');
-                    $drawing->setDescription('Issuer Signature');
-                    $drawing->setPath($signaturePath);
-                    $drawing->setHeight(35);
-                    $drawing->setOffsetX(10);
-                    $drawing->setOffsetY(5);
-                    $drawing->setCoordinates("F{$currentRow}");
-                    $drawing->setWorksheet($sheet);
-                } else {
-                    $sheet->setCellValue("F{$currentRow}", 'SGD');
-                    $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-                }
-            } catch (Exception $e) {
-                $sheet->setCellValue("F{$currentRow}", 'SGD');
-                $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-            }
-        } elseif ($risSlip->issued_by) {
-            $sheet->setCellValue("F{$currentRow}", 'SGD');
-            $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-        }
-        $sheet->getStyle("F{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
-        // Received by (Column H) - IMAGE OR SGD
-        if ($risSlip->received_at && $risSlip->receiver_signature_type == 'esign' && $risSlip->receiver && $risSlip->receiver->signature_path) {
-            try {
-                $signaturePath = storage_path('app/public/'.$risSlip->receiver->signature_path);
-                if (file_exists($signaturePath)) {
-                    $drawing = new Drawing;
-                    $drawing->setName('Receiver Signature');
-                    $drawing->setDescription('Receiver Signature');
-                    $drawing->setPath($signaturePath);
-                    $drawing->setHeight(35);
-                    $drawing->setOffsetX(10);
-                    $drawing->setOffsetY(5);
-                    $drawing->setCoordinates("H{$currentRow}");
-                    $drawing->setWorksheet($sheet);
-                } else {
-                    $sheet->setCellValue("H{$currentRow}", 'SGD');
-                    $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
-                }
-            } catch (Exception $e) {
-                $sheet->setCellValue("H{$currentRow}", 'SGD');
-                $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
+        $signers = [
+            'requested' => [$risSlip->requester, $risSlip->requester_signature_type, (bool) $risSlip->requester],
+            'approved' => [$risSlip->approver, $risSlip->approver_signature_type, (bool) $risSlip->approved_by],
+            'issued' => [$risSlip->issuer, $risSlip->issuer_signature_type, (bool) $risSlip->issued_by],
+            'received' => [$risSlip->receiver, $risSlip->receiver_signature_type, (bool) $risSlip->received_at],
+        ];
+
+        foreach ($signers as $step => [$signer, $signatureType, $signed]) {
+            $cell = RisSignatureBox::BOXES[$step][0].$currentRow;
+
+            if ($signed && ! ($signatureType === 'esign' && $this->drawSignature($sheet, $risSlip, $step, $signer, $currentRow))) {
+                $sheet->setCellValue($cell, 'SGD');
+                $sheet->getStyle($cell)->getFont()->setItalic(true)->setBold(true);
             }
-        } elseif ($risSlip->received_at) {
-            $sheet->setCellValue("H{$currentRow}", 'SGD');
-            $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
+
+            $sheet->getStyle($cell)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
         }
-        $sheet->getStyle("H{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
 
         $currentRow++;
 
@@ -1444,16 +1385,52 @@ class RisSlipController extends Controller
         $sheet->getColumnDimension('G')->setWidth(10);  // Issue Quantity / Issued by (part 2)
         $sheet->getColumnDimension('H')->setWidth(18);  // Remarks / Received by (wider to prevent overflow)
 
-        // Write file
-        $writer = new Xlsx($spreadsheet);
         $filename = 'RIS_'.$risSlip->ris_no.'_'.$risSlip->created_at->format('Y_m_d').'.xlsx';
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="'.$filename.'"');
-        header('Cache-Control: max-age=0');
+        return ExcelDownload::response($spreadsheet, $filename);
+    }
 
-        $writer->save('php://output');
-        exit;
+    /**
+     * Puts one signature image in its box on the Excel form. False when
+     * there is no image to put (the caller prints "SGD" instead).
+     */
+    private function drawSignature(Worksheet $sheet, RisSlip $risSlip, string $step, ?User $signer, int $row): bool
+    {
+        try {
+            $frozen = $risSlip->signatures->firstWhere('step', $step);
+            $file = Uploads::localPath($frozen->path ?? $signer?->signature_path);
+            $size = $file !== null ? getimagesize($file) : false;
+
+            if ($size === false || $size[0] < 1 || $size[1] < 1) {
+                return false;
+            }
+
+            // Signed before placements were kept: where the export always put it.
+            $frame = $frozen !== null
+                ? RisSignatureBox::frame($step, ['x' => $frozen->x, 'y' => $frozen->y, 'width' => $frozen->width], $size[0], $size[1])
+                : ['left' => 10, 'top' => 5, 'width' => 35 * $size[0] / $size[1], 'height' => 35];
+
+            [$column, $offsetX] = RisSignatureBox::anchor($step, $frame['left']);
+
+            $drawing = new Drawing;
+            $drawing->setName(ucfirst($step).' signature');
+            $drawing->setDescription(ucfirst($step).' by signature');
+            $drawing->setPath($file);
+            $drawing->setResizeProportional(false);
+            $drawing->setWidth((int) round($frame['width']));
+            $drawing->setHeight((int) round($frame['height']));
+            $drawing->setCoordinates($column.$row);
+            $drawing->setOffsetX($offsetX);
+            $drawing->setOffsetY((int) round(max(0, $frame['top'])));
+            $drawing->setRotation((int) round($frozen->rotation ?? 0));
+            $drawing->setWorksheet($sheet);
+
+            return true;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
     }
 
     public function storeManual(Request $request, ReferenceNumberService $referenceNumberService)

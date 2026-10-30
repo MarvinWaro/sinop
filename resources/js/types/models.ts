@@ -3,6 +3,8 @@
  * Decimal columns cast with `decimal:2` come through as strings.
  */
 
+import type { RisSlipSignature } from './signatures';
+
 export type Role = 'admin' | 'cao' | 'staff';
 
 export type Department = {
@@ -246,6 +248,8 @@ export type RisSlip = {
     receiver?: AppUser | null;
     decliner?: AppUser | null;
     items?: RisItem[];
+    /** E-signatures frozen at signing (loaded on the RIS page). */
+    signatures?: RisSlipSignature[];
     created_at: string;
     updated_at: string;
 };

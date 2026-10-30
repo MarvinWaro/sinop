@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Supply;
 use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
+use App\Support\ExcelDownload;
 use App\Models\Department;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +14,6 @@ use Inertia\Inertia;
 
 // PhpSpreadsheet imports
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -636,8 +636,6 @@ class ReportPhysicalCountController extends Controller
         $sheet->getColumnDimension('I')->setWidth(10);  // Shortage/Overage Value
         $sheet->getColumnDimension('J')->setWidth(15);  // Remarks
 
-        // Write file
-        $writer = new Xlsx($spreadsheet);
         $filename = 'RPCI_' . $year . '_S' . $semester . ($fundCluster ? "_FC{$fundCluster}" : "_AllFC") . '.xlsx';
 
         \Log::info('RPCI Excel Export Generated', [
@@ -649,12 +647,7 @@ class ReportPhysicalCountController extends Controller
             'signature_section_row' => $signatureStartRow
         ]);
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
-
-        $writer->save('php://output');
-        exit;
+        return ExcelDownload::response($spreadsheet, $filename);
     }
 
     /**

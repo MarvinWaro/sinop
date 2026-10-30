@@ -44,8 +44,13 @@ class StaffDashboardController extends Controller
     }
 
     /** The person's requisitions, with the Request supply dialog. */
-    public function requests(Request $request): Response
+    public function requests(Request $request): Response|RedirectResponse
     {
+        // Old "Request supply" links opened a dialog here (?new).
+        if ($request->has('new')) {
+            return redirect()->route('staff.new-request');
+        }
+
         $user = $request->user();
 
         $query = RisSlip::query()
@@ -70,9 +75,15 @@ class StaffDashboardController extends Controller
             'counts' => $this->requestCounts($user),
             'myRequests' => $query->paginate(10, ['*'], 'requests')->withQueryString(),
             'filters' => $request->only(['status', 'search']),
-            // The Request supply dialog's lists: loaded only when it opens.
-            'supplies' => Inertia::optional(fn () => $this->requestableSupplies()),
-            'departments' => Inertia::optional(fn () => Department::query()->orderBy('name')->get(['id', 'name'])),
+        ]);
+    }
+
+    /** New supply request: choose items, then review the form and sign. */
+    public function newRequest(): Response
+    {
+        return Inertia::render('staff/request-create', [
+            'supplies' => $this->requestableSupplies(),
+            'departments' => Department::query()->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -200,7 +211,7 @@ class StaffDashboardController extends Controller
     }
 
     /**
-     * Supplies for the Request supply dialog, one row each: what's left to
+     * Supplies for the new request page, one row each: what's left to
      * request (on hand minus what's already requested in pending and
      * approved slips). A supply can have a stock row per fund cluster; the
      * request is checked against the first available row, so its largest

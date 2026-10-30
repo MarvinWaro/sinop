@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\Uploads;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Storage;
 
 class PropertyImage extends Model
 {
@@ -19,9 +19,9 @@ class PropertyImage extends Model
         'url',
     ];
 
-    public function getUrlAttribute(): string
+    public function getUrlAttribute(): ?string
     {
-        return Storage::disk('public')->url($this->file_path);
+        return Uploads::url($this->file_path);
     }
 
     // Define the inverse relationship to Property

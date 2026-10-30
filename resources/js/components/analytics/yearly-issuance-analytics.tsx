@@ -6,6 +6,7 @@ import {
     TrendingUp,
     Wallet,
 } from 'lucide-react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChartCard } from '@/components/chart-card';
 import {
@@ -281,6 +282,7 @@ export function YearlyIssuanceAnalytics({ data }: { data: YearlyData }) {
                 <ChartCard
                     title="Top categories"
                     description="Highest spending categories"
+                    contentClassName="flex flex-1 flex-col gap-6"
                 >
                     {data.top_categories.length === 0 ? (
                         <NoData />
@@ -315,11 +317,13 @@ export function YearlyIssuanceAnalytics({ data }: { data: YearlyData }) {
                             ))}
                         </div>
                     )}
+                    <CostPerItem categories={data.top_categories} />
                 </ChartCard>
 
                 <ChartCard
                     title="Yearly insights"
                     description="Key trends and patterns"
+                    contentClassName="flex flex-1 flex-col gap-6"
                 >
                     <dl className="grid gap-3 text-sm">
                         <Insight
@@ -373,9 +377,172 @@ export function YearlyIssuanceAnalytics({ data }: { data: YearlyData }) {
                             }
                         />
                     </dl>
+                    <MonthStrip
+                        months={data.monthly_breakdown}
+                        quarters={data.quarterly_data}
+                        strongestQuarter={data.insights.strongest_quarter}
+                    />
                 </ChartCard>
             </div>
         </div>
+    );
+}
+
+/**
+ * The year at a glance under the insights: one column per month, grouped by
+ * quarter, the busiest month in the accent colour and the strongest quarter
+ * named. Pointing at (or tabbing to) a month shows its value; the Monthly
+ * breakdown table beside it has every figure.
+ */
+function MonthStrip({
+    months,
+    quarters,
+    strongestQuarter,
+}: {
+    months: YearlyData['monthly_breakdown'];
+    quarters: YearlyData['quarterly_data'];
+    strongestQuarter: string;
+}) {
+    const [active, setActive] = useState<number | null>(null);
+    const values = months.map((month) => toNumber(month.total));
+    const max = Math.max(0, ...values);
+
+    if (max <= 0 || months.length !== 12 || quarters.length < 4) {
+        return null;
+    }
+
+    const busiest = values.indexOf(max);
+    const shown = active ?? busiest;
+
+    return (
+        <figure className="mt-auto grid gap-3 border-t pt-4">
+            <figcaption className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="font-medium text-muted-foreground">
+                    Spending by month
+                </span>
+                <span className="tabular-nums" aria-live="polite">
+                    <span className="text-muted-foreground">
+                        {months[shown].month_full}{' '}
+                    </span>
+                    <span className="font-medium">
+                        {formatPeso(values[shown])}
+                    </span>
+                </span>
+            </figcaption>
+
+            <div className="grid grid-cols-4 gap-2">
+                {quarters.slice(0, 4).map((quarter, q) => (
+                    <div key={quarter.quarter} className="grid gap-1.5">
+                        <div className="flex h-28 items-end gap-1">
+                            {[0, 1, 2].map((offset) => {
+                                const index = q * 3 + offset;
+                                const value = values[index];
+
+                                return (
+                                    <button
+                                        key={index}
+                                        type="button"
+                                        onPointerEnter={() => setActive(index)}
+                                        onPointerLeave={() => setActive(null)}
+                                        onFocus={() => setActive(index)}
+                                        onBlur={() => setActive(null)}
+                                        aria-label={`${months[index].month_full}: ${formatPeso(value)}`}
+                                        className="flex h-full flex-1 items-end rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                    >
+                                        <span
+                                            className={cn(
+                                                'w-full rounded-t-[3px] transition-opacity',
+                                                index === busiest
+                                                    ? 'bg-primary'
+                                                    : 'bg-primary/30',
+                                                active !== null &&
+                                                    active !== index &&
+                                                    'opacity-50',
+                                            )}
+                                            // A zero month keeps a sliver, so
+                                            // the baseline still reads.
+                                            style={{
+                                                height:
+                                                    value > 0
+                                                        ? `${Math.max(4, (value / max) * 100)}%`
+                                                        : '2px',
+                                            }}
+                                        />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <div className="flex items-center justify-between border-t pt-1 text-[11px] text-muted-foreground">
+                            <span
+                                className={cn(
+                                    quarter.quarter === strongestQuarter &&
+                                        'font-medium text-foreground',
+                                )}
+                            >
+                                {quarter.quarter}
+                            </span>
+                            <span className="tabular-nums">
+                                {formatCompactPeso(quarter.total)}
+                            </span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </figure>
+    );
+}
+
+/**
+ * What one line item costs on average in each category (total / items): a
+ * figure the list above doesn't give, shown as small bars.
+ */
+function CostPerItem({
+    categories,
+}: {
+    categories: YearlyData['top_categories'];
+}) {
+    const rows = categories
+        .filter((category) => category.items > 0)
+        .map((category) => ({
+            label: category.category,
+            value: toNumber(category.total) / category.items,
+        }));
+    const max = Math.max(0, ...rows.map((row) => row.value));
+
+    if (rows.length === 0 || max <= 0) {
+        return null;
+    }
+
+    return (
+        <figure className="mt-auto grid gap-3 border-t pt-4">
+            <figcaption className="text-xs font-medium text-muted-foreground">
+                Average cost per item
+            </figcaption>
+            <dl className="grid gap-2.5">
+                {rows.map((row) => (
+                    <div
+                        key={row.label}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 text-xs"
+                    >
+                        <dt className="truncate" title={row.label}>
+                            {row.label}
+                        </dt>
+                        <dd className="font-medium tabular-nums">
+                            {formatPeso(row.value)}
+                        </dd>
+                        <div
+                            aria-hidden
+                            className="col-span-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                        >
+                            <div
+                                className="h-full rounded-full bg-primary/60"
+                                style={{ width: `${(row.value / max) * 100}%` }}
+                            />
+                        </div>
+                    </div>
+                ))}
+            </dl>
+        </figure>
     );
 }
 

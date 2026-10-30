@@ -6,9 +6,11 @@ use App\Enums\ActivityAction;
 use App\Enums\ActivityModule;
 use App\Models\Concerns\LogsActivity;
 use App\Services\ActivityRecorder;
+use App\Support\Uploads;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -16,7 +18,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Notifications\RoutesNotifications;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 /**
@@ -110,9 +111,20 @@ class User extends Authenticatable
         return $this->belongsTo(Department::class);
     }
 
-    public function designation()
+    /** @return BelongsTo<Designation, $this> */
+    public function designation(): BelongsTo
     {
         return $this->belongsTo(Designation::class);
+    }
+
+    /**
+     * Saved e-signatures, the default first.
+     *
+     * @return HasMany<UserSignature, $this>
+     */
+    public function signatures(): HasMany
+    {
+        return $this->hasMany(UserSignature::class)->orderByDesc('is_default')->latest('id');
     }
 
     public function properties()
@@ -246,7 +258,7 @@ class User extends Authenticatable
     public function getProfilePhotoUrlAttribute(): string
     {
         if ($this->profile_photo_path) {
-            return Storage::disk('public')->url($this->profile_photo_path);
+            return (string) Uploads::url($this->profile_photo_path);
         }
 
         $initials = collect(explode(' ', trim((string) $this->name)))
@@ -263,16 +275,12 @@ class User extends Authenticatable
      */
     public function getAvatarAttribute(): ?string
     {
-        return $this->profile_photo_path
-            ? Storage::disk('public')->url($this->profile_photo_path)
-            : null;
+        return Uploads::url($this->profile_photo_path);
     }
 
     public function getSignatureUrlAttribute(): ?string
     {
-        return $this->signature_path
-            ? Storage::disk('public')->url($this->signature_path)
-            : null;
+        return Uploads::url($this->signature_path);
     }
 
     public function updateProfilePhoto(UploadedFile $photo): void
@@ -280,11 +288,11 @@ class User extends Authenticatable
         $previous = $this->profile_photo_path;
 
         $this->forceFill([
-            'profile_photo_path' => $photo->storePublicly('profile-photos', ['disk' => 'public']),
+            'profile_photo_path' => $photo->store('profile-photos', Uploads::diskName()),
         ])->save();
 
         if ($previous) {
-            Storage::disk('public')->delete($previous);
+            Uploads::disk()->delete($previous);
         }
     }
 
@@ -294,7 +302,7 @@ class User extends Authenticatable
             return;
         }
 
-        Storage::disk('public')->delete($this->profile_photo_path);
+        Uploads::disk()->delete($this->profile_photo_path);
 
         $this->forceFill(['profile_photo_path' => null])->save();
     }

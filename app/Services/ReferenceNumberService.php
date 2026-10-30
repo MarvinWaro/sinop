@@ -72,7 +72,7 @@ class ReferenceNumberService
      * Check if an RIS number already exists, if so return it.
      * If not, generate a new one.
      */
-    public function getOrCreateRisNumber(int $risId = null): string
+    public function getOrCreateRisNumber(?int $risId = null): string
     {
         if ($risId) {
             $existingRis = RisSlip::find($risId);

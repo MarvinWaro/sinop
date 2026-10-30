@@ -153,31 +153,37 @@ class RisSlip extends Model
         return $this->belongsTo(Department::class, 'division');
     }
 
+    /** @return BelongsTo<Department, $this> */
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'division');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function requester(): BelongsTo
     {
         return $this->belongsTo(User::class, 'requested_by');
     }
 
+    /** @return HasMany<RisItem, $this> */
     public function items(): HasMany
     {
         return $this->hasMany(RisItem::class, 'ris_id', 'ris_id');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function approver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function issuer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'issued_by');
     }
 
+    /** @return BelongsTo<User, $this> */
     public function receiver(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by');
@@ -186,6 +192,16 @@ class RisSlip extends Model
     public function decliner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'declined_by');
+    }
+
+    /**
+     * The e-signatures put on this slip, one per signed step.
+     *
+     * @return HasMany<RisSlipSignature, $this>
+     */
+    public function signatures(): HasMany
+    {
+        return $this->hasMany(RisSlipSignature::class, 'ris_id', 'ris_id');
     }
 
     // NEW: Manual entry relationship

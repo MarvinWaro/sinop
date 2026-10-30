@@ -6,6 +6,7 @@ use App\Models\Supply;
 use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
 use App\Services\SupplyCardNavigation;
+use App\Support\ExcelDownload;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
@@ -13,7 +14,6 @@ use Carbon\Carbon;
 use DateTime;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -487,19 +487,13 @@ class StockCardController extends Controller
         $sheet->getColumnDimension('F')->setWidth(12);
         $sheet->getColumnDimension('G')->setWidth(15);
 
-        $writer = new Xlsx($spreadsheet);
         $filename = 'Stock_Card_' . $supply->stock_no . '_' . $selectedYear;
         if ($selectedMonth) {
             $filename .= '_' . str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
         }
         $filename .= '.xlsx';
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
-
-        $writer->save('php://output');
-        exit;
+        return ExcelDownload::response($spreadsheet, $filename);
     }
 
 }

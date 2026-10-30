@@ -3,7 +3,6 @@ import {
     CheckCircle2,
     FileSpreadsheet,
     PackageCheck,
-    Printer,
     Send,
     XCircle,
 } from 'lucide-react';
@@ -13,7 +12,12 @@ import { FormField } from '@/components/form-field';
 import { FormSelect } from '@/components/form-select';
 import InputError from '@/components/input-error';
 import { PageContainer, PageHeader } from '@/components/page-header';
-import { SignatureChoice } from '@/components/signature-choice';
+import {
+    signatureError,
+    SignatureChoice,
+    signatureReady,
+} from '@/components/signature-choice';
+import { SignatureBox } from '@/components/signature/signature-box';
 import { RisStatusBadge } from '@/components/status-badges';
 import { TablePanel } from '@/components/table-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -41,17 +45,26 @@ import { Textarea } from '@/components/ui/textarea';
 import { useLiveProps } from '@/hooks/use-inbox';
 import { formatDateTime, formatLongDate, toNumber } from '@/lib/format';
 import { risKey, supplyLabel } from '@/lib/ris';
+import { boxAspect } from '@/lib/signature-placement';
 import {
     approve,
     decline,
     exportExcel,
     index as risIndex,
     issue,
-    print,
     receive,
     show as showRis,
 } from '@/routes/ris';
-import type { AppUser, RisItem, RisSlip, SignatureType } from '@/types';
+import type {
+    AppUser,
+    BoxSignature,
+    PlacedSignature,
+    RisItem,
+    RisSlip,
+    RisSlipSignature,
+    SignatureType,
+    SignStep,
+} from '@/types';
 
 type Recipients = {
     department: string;
@@ -113,16 +126,6 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                     }
                     actions={
                         <>
-                            <Button asChild variant="outline">
-                                <a
-                                    href={print.url(key)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
-                                    <Printer />
-                                    Print
-                                </a>
-                            </Button>
                             <Button asChild variant="outline">
                                 <a href={exportExcel.url(key)}>
                                     <FileSpreadsheet />
@@ -293,6 +296,8 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
 
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <Signatory
+                        step="requested"
+                        frozen={risSlip.signatures}
                         label="Requested by"
                         user={risSlip.requester}
                         signed={Boolean(risSlip.requester)}
@@ -301,6 +306,7 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                     />
                     {risSlip.status === 'declined' && risSlip.declined_by ? (
                         <Signatory
+                            step="approved"
                             label="Declined by"
                             user={risSlip.decliner}
                             signed
@@ -310,6 +316,8 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                         />
                     ) : (
                         <Signatory
+                            step="approved"
+                            frozen={risSlip.signatures}
                             label="Approved by"
                             user={risSlip.approver}
                             signed={Boolean(risSlip.approved_by)}
@@ -318,6 +326,8 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                         />
                     )}
                     <Signatory
+                        step="issued"
+                        frozen={risSlip.signatures}
                         label="Issued by"
                         user={risSlip.issuer}
                         signed={Boolean(risSlip.issued_by)}
@@ -325,6 +335,8 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                         date={risSlip.issued_at}
                     />
                     <Signatory
+                        step="received"
+                        frozen={risSlip.signatures}
                         label="Received by"
                         user={risSlip.receiver}
                         signed={Boolean(
@@ -392,6 +404,8 @@ function Info({
 }
 
 function Signatory({
+    step,
+    frozen = [],
     label,
     user,
     signed,
@@ -400,6 +414,9 @@ function Signatory({
     declined = false,
     pendingLabel = 'Pending',
 }: {
+    step: SignStep;
+    /** The slip's frozen e-signatures. */
+    frozen?: RisSlipSignature[];
     label: string;
     user: AppUser | null | undefined;
     signed: boolean;
@@ -408,6 +425,15 @@ function Signatory({
     declined?: boolean;
     pendingLabel?: string;
 }) {
+    // Where the signer placed it; slips signed before that show the
+    // person's current signature, centred.
+    const placed = frozen.find((signature) => signature.step === step);
+    const signature: BoxSignature | null = placed
+        ? { url: placed.url, placement: placed }
+        : user?.signature_url
+          ? { url: user.signature_url, placement: null }
+          : null;
+
     return (
         <Card className="gap-3 py-4">
             <CardContent className="space-y-3 px-4">
@@ -419,13 +445,13 @@ function Signatory({
                         <span className="pb-2 text-sm font-semibold text-destructive">
                             DECLINED
                         </span>
-                    ) : signed &&
-                      signatureType === 'esign' &&
-                      user?.signature_url ? (
-                        <img
-                            src={user.signature_url}
-                            alt={`${label} signature`}
-                            className="max-h-14 mix-blend-multiply dark:invert"
+                    ) : signed && signatureType === 'esign' && signature ? (
+                        <SignatureBox
+                            step={step}
+                            signature={signature}
+                            label={`${label} signature`}
+                            // As wide as fits, never taller than the line.
+                            style={{ maxWidth: `${4 * boxAspect(step)}rem` }}
                         />
                     ) : signed ? (
                         <span className="pb-2 text-sm font-semibold italic">
@@ -466,9 +492,11 @@ function ApproveDialog({
     const form = useForm<{
         fund_cluster: string;
         signature_type: SignatureType;
+        signature: PlacedSignature | null;
     }>({
         fund_cluster: risSlip.fund_cluster === '151' ? '151' : '101',
         signature_type: 'sgd',
+        signature: null,
     });
 
     const submit = (event: FormEvent) => {
@@ -512,11 +540,22 @@ function ApproveDialog({
                         onChange={(value) =>
                             form.setData('signature_type', value)
                         }
+                        step="approved"
+                        document={{ slip: risSlip }}
+                        signature={form.data.signature}
+                        onSignatureChange={(signature) =>
+                            form.setData('signature', signature)
+                        }
                         terms={approveTerms}
                         agreed={agreed}
                         onAgreedChange={setAgreed}
                     />
-                    <InputError message={form.errors.signature_type} />
+                    <InputError
+                        message={
+                            form.errors.signature_type ??
+                            signatureError(form.errors)
+                        }
+                    />
                     <DialogFooter>
                         <Button
                             type="button"
@@ -530,7 +569,11 @@ function ApproveDialog({
                             disabled={
                                 form.processing ||
                                 (form.data.signature_type === 'esign' &&
-                                    !agreed)
+                                    !agreed) ||
+                                !signatureReady(
+                                    form.data.signature_type,
+                                    form.data.signature,
+                                )
                             }
                         >
                             Approve request
@@ -650,6 +693,7 @@ function IssueDialog({
         items: IssueItem[];
         received_by: string;
         signature_type: SignatureType;
+        signature: PlacedSignature | null;
     }>({
         items: risSlip.items.map((item, index) => {
             const limit = limits[index];
@@ -668,6 +712,7 @@ function IssueDialog({
         }),
         received_by: risSlip.requested_by ? String(risSlip.requested_by) : '',
         signature_type: 'sgd',
+        signature: null,
     });
 
     const updateItem = (index: number, patch: Partial<IssueItem>) => {
@@ -896,9 +941,21 @@ function IssueDialog({
                         onChange={(value) =>
                             form.setData('signature_type', value)
                         }
+                        step="issued"
+                        document={{ slip: risSlip }}
+                        signature={form.data.signature}
+                        onSignatureChange={(signature) =>
+                            form.setData('signature', signature)
+                        }
                         terms={issueTerms}
                         agreed={agreed}
                         onAgreedChange={setAgreed}
+                    />
+                    <InputError
+                        message={
+                            form.errors.signature_type ??
+                            signatureError(form.errors)
+                        }
                     />
                 </form>
 
@@ -917,7 +974,11 @@ function IssueDialog({
                             form.processing ||
                             invalidRows > 0 ||
                             nothingToIssue ||
-                            (form.data.signature_type === 'esign' && !agreed)
+                            (form.data.signature_type === 'esign' && !agreed) ||
+                            !signatureReady(
+                                form.data.signature_type,
+                                form.data.signature,
+                            )
                         }
                     >
                         Issue supplies
@@ -930,8 +991,12 @@ function IssueDialog({
 
 function ReceivePanel({ risSlip }: { risSlip: RisSlip }) {
     const [agreed, setAgreed] = useState(false);
-    const form = useForm<{ signature_type: SignatureType }>({
+    const form = useForm<{
+        signature_type: SignatureType;
+        signature: PlacedSignature | null;
+    }>({
         signature_type: 'sgd',
+        signature: null,
     });
 
     const submit = (event: FormEvent) => {
@@ -958,18 +1023,33 @@ function ReceivePanel({ risSlip }: { risSlip: RisSlip }) {
                         onChange={(value) =>
                             form.setData('signature_type', value)
                         }
+                        step="received"
+                        document={{ slip: risSlip }}
+                        signature={form.data.signature}
+                        onSignatureChange={(signature) =>
+                            form.setData('signature', signature)
+                        }
                         terms={receiveTerms}
                         agreed={agreed}
                         onAgreedChange={setAgreed}
                     />
-                    <InputError message={form.errors.signature_type} />
+                    <InputError
+                        message={
+                            form.errors.signature_type ??
+                            signatureError(form.errors)
+                        }
+                    />
                     <div>
                         <Button
                             type="submit"
                             disabled={
                                 form.processing ||
                                 (form.data.signature_type === 'esign' &&
-                                    !agreed)
+                                    !agreed) ||
+                                !signatureReady(
+                                    form.data.signature_type,
+                                    form.data.signature,
+                                )
                             }
                         >
                             Confirm receipt

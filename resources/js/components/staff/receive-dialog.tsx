@@ -1,7 +1,11 @@
 import { useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
-import { SignatureChoice } from '@/components/signature-choice';
+import {
+    signatureError,
+    SignatureChoice,
+    signatureReady,
+} from '@/components/signature-choice';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -13,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { risKey } from '@/lib/ris';
 import { receive } from '@/routes/ris';
-import type { RisSlip, SignatureType } from '@/types';
+import type { PlacedSignature, RisSlip, SignatureType } from '@/types';
 
 /** Confirm receipt of issued supplies, with the receiver's signature choice. */
 export function ReceiveDialog({
@@ -23,8 +27,12 @@ export function ReceiveDialog({
     requisition: RisSlip | null;
     onClose: () => void;
 }) {
-    const form = useForm<{ signature_type: SignatureType }>({
+    const form = useForm<{
+        signature_type: SignatureType;
+        signature: PlacedSignature | null;
+    }>({
         signature_type: 'sgd',
+        signature: null,
     });
 
     const submit = (event: FormEvent) => {
@@ -54,13 +62,26 @@ export function ReceiveDialog({
                             {requisition?.ris_no}.
                         </DialogDescription>
                     </DialogHeader>
-                    <SignatureChoice
-                        value={form.data.signature_type}
-                        onChange={(value) =>
-                            form.setData('signature_type', value)
+                    {requisition && (
+                        <SignatureChoice
+                            value={form.data.signature_type}
+                            onChange={(value) =>
+                                form.setData('signature_type', value)
+                            }
+                            step="received"
+                            document={{ slip: requisition }}
+                            signature={form.data.signature}
+                            onSignatureChange={(signature) =>
+                                form.setData('signature', signature)
+                            }
+                        />
+                    )}
+                    <InputError
+                        message={
+                            form.errors.signature_type ??
+                            signatureError(form.errors)
                         }
                     />
-                    <InputError message={form.errors.signature_type} />
                     <DialogFooter>
                         <Button
                             type="button"
@@ -69,7 +90,16 @@ export function ReceiveDialog({
                         >
                             Cancel
                         </Button>
-                        <Button type="submit" disabled={form.processing}>
+                        <Button
+                            type="submit"
+                            disabled={
+                                form.processing ||
+                                !signatureReady(
+                                    form.data.signature_type,
+                                    form.data.signature,
+                                )
+                            }
+                        >
                             Confirm receipt
                         </Button>
                     </DialogFooter>

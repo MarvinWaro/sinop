@@ -1,26 +1,41 @@
-import { Head, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { Head, usePage } from '@inertiajs/react';
+import { lazy, Suspense, useState } from 'react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import Heading from '@/components/heading';
-import { SignatureUpload } from '@/components/signature-upload';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { deleteMethod as deleteSignature, edit } from '@/routes/signature';
+import InputError from '@/components/input-error';
+import { SignatureLibrary } from '@/components/signature/signature-library';
+import { useSignatureLibrary } from '@/hooks/use-signature-library';
+import { edit } from '@/routes/signature';
+import type { UserSignature } from '@/types';
 
-export default function Signature() {
+// The drawing pad and handwriting fonts load only when they are needed.
+const SignatureCreatorDialog = lazy(
+    () => import('@/components/signature/signature-creator-dialog'),
+);
+
+export default function Signature({
+    signatures,
+    limit,
+}: {
+    signatures: UserSignature[];
+    limit: number;
+}) {
     const { auth } = usePage().props;
-    const [confirmRemove, setConfirmRemove] = useState(false);
-    const [removing, setRemoving] = useState(false);
+    const library = useSignatureLibrary({ signatures, limit });
+    const [creating, setCreating] = useState(false);
+    const [removing, setRemoving] = useState<UserSignature | null>(null);
+    const [busy, setBusy] = useState(false);
 
-    const remove = () => {
-        router.delete(deleteSignature.url(), {
-            preserveScroll: true,
-            onStart: () => setRemoving(true),
-            onFinish: () => {
-                setRemoving(false);
-                setConfirmRemove(false);
-            },
-        });
+    const run = async (action: () => Promise<unknown>) => {
+        setBusy(true);
+
+        try {
+            await action();
+        } catch {
+            // Shown below the list (library.error).
+        } finally {
+            setBusy(false);
+        }
     };
 
     return (
@@ -31,53 +46,54 @@ export default function Signature() {
                 <Heading
                     variant="small"
                     title="E-Signature"
-                    description="Upload your signature to sign requisition and issue slips electronically"
+                    description={`Draw, type or upload up to ${library.limit} signatures for signing requisition and issue slips. The default one is picked first when you sign.`}
                 />
 
-                <div className="grid gap-2">
-                    <Label>Current signature</Label>
-                    <div className="flex min-h-28 items-center justify-center rounded-md border bg-white p-4">
-                        {auth.user.signature_url ? (
-                            <img
-                                src={auth.user.signature_url}
-                                alt="Your signature"
-                                className="max-h-24"
-                            />
-                        ) : (
-                            <p className="text-sm text-muted-foreground">
-                                No signature uploaded yet.
-                            </p>
-                        )}
-                    </div>
-                    {auth.user.signature_url && (
-                        <div>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setConfirmRemove(true)}
-                            >
-                                Remove signature
-                            </Button>
-                        </div>
-                    )}
-                </div>
-
-                <SignatureUpload
-                    label="Upload new signature"
-                    saveLabel="Upload signature"
+                <SignatureLibrary
+                    signatures={library.signatures}
+                    limit={library.limit}
+                    busy={busy}
+                    onNew={() => setCreating(true)}
+                    onMakeDefault={(signature) =>
+                        run(() => library.makeDefault(signature.id))
+                    }
+                    onDelete={setRemoving}
+                    className="sm:grid-cols-3"
                 />
+                <InputError message={library.error ?? undefined} />
+
+                <p className="text-sm text-muted-foreground">
+                    Requisitions you already signed keep the signature you used,
+                    even if you change or delete it here.
+                </p>
             </div>
 
+            {creating && (
+                <Suspense>
+                    <SignatureCreatorDialog
+                        open={creating}
+                        onOpenChange={setCreating}
+                        typedName={auth.user.name}
+                        onCreate={library.add}
+                    />
+                </Suspense>
+            )}
+
             <ConfirmDialog
-                open={confirmRemove}
-                onOpenChange={setConfirmRemove}
-                title="Remove signature?"
-                description="You will need to upload it again to e-sign requisition slips."
-                confirmLabel="Remove"
+                open={removing !== null}
+                onOpenChange={(open) => !open && setRemoving(null)}
+                title="Delete this signature?"
+                description="Requisitions you already signed with it keep it."
+                confirmLabel="Delete"
                 destructive
-                processing={removing}
-                onConfirm={remove}
+                processing={busy}
+                onConfirm={() =>
+                    removing &&
+                    run(async () => {
+                        await library.remove(removing.id);
+                        setRemoving(null);
+                    })
+                }
             />
         </>
     );

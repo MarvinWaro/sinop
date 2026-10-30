@@ -9,6 +9,7 @@ use App\Models\RisItem;
 use App\Models\Department;
 use App\Models\SupplyStock;
 use App\Services\RsmiAnalyticsService;
+use App\Support\ExcelDownload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -17,7 +18,6 @@ use Inertia\Inertia;
 
 // Add this to your imports at the top of your controller
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
@@ -1379,7 +1379,6 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $sheet->getColumnDimension('H')->setWidth(20);
 
         // Write file with enhanced filename
-        $writer = new Xlsx($spreadsheet);
         $fundClusterSuffix = $fundCluster ? "_FC{$fundCluster}" : "_AllFC";
         $filename = 'RSMI_Report_' . $startDate->format('Y_m') . $fundClusterSuffix . '.xlsx';
 
@@ -1393,12 +1392,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'filename' => $filename
         ]);
 
-        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
-        header('Cache-Control: max-age=0');
-
-        $writer->save('php://output');
-        exit;
+        return ExcelDownload::response($spreadsheet, $filename);
     }
 
     private function verifyConsistencyWithLedgerCard($transactions)

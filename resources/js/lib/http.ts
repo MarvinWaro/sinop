@@ -1,6 +1,7 @@
 /**
  * Small JSON helpers for the few AJAX endpoints that still return JSON
- * (next IAR/RIS numbers, IAR data, manual stock validation, ...).
+ * (next IAR/RIS numbers, IAR data, manual stock validation, saved
+ * e-signatures, ...).
  * Everything else goes through Inertia's router/useForm.
  */
 
@@ -93,6 +94,18 @@ async function sendJson<T>(
         headers: buildHeaders(body !== undefined),
         credentials: 'same-origin',
         body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    return handle<T>(response);
+}
+
+/** A multipart POST (file uploads); the answer is JSON. */
+export async function postForm<T>(url: string, body: FormData): Promise<T> {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: buildHeaders(false),
+        credentials: 'same-origin',
+        body,
     });
 
     return handle<T>(response);

@@ -18,7 +18,10 @@ use App\Http\Controllers\SupplyController;
 use App\Http\Controllers\SupplyLedgerCardController;
 use App\Http\Controllers\SupplyStockController;
 use App\Http\Controllers\SupplyTransactionController;
+use App\Http\Controllers\UploadController;
 use App\Http\Controllers\UserController;
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Support\Uploads;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Route;
 
@@ -36,6 +39,9 @@ Route::inertia('/', 'welcome')->name('home');
 |
 */
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Messages: a preview with sample data until the feature is built.
+    Route::inertia('/messages', 'messages/index')->name('messages.index');
+
 
     // Notifications: the page, and the JSON the header bell uses. Every
     // signed-in person has their own; the controller keeps them private.
@@ -63,8 +69,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/ris', [RisSlipController::class, 'store'])->name('ris.store')->middleware('can:ris.request');
 
     Route::get('/ris/{risSlip}', [RisSlipController::class, 'show'])->name('ris.show')->middleware('can:view,risSlip');
-    Route::get('/ris/{risSlip}/print', [RisSlipController::class, 'print'])->name('ris.print')->middleware('can:view,risSlip');
     Route::get('/ris/{risSlip}/export-excel', [RisSlipController::class, 'exportExcel'])->name('ris.export-excel')->middleware('can:view,risSlip');
+    // The form as it will print, for the signing preview (JSON).
+    Route::get('/ris/{risSlip}/document', [RisSlipController::class, 'document'])->name('ris.document')->middleware('can:view,risSlip')->withoutMiddleware(HandleInertiaRequests::class);
     Route::post('/ris/{risSlip}/receive', [RisSlipController::class, 'receive'])->name('ris.receive');
 
     // Stock cards
@@ -82,9 +89,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Stock data for the edit dialog
     Route::get('/stocks/{stock}/iar-data', [SupplyStockController::class, 'getIarData'])->name('stocks.iar-data')->middleware('can:stocks.view');
 
-    // E-signature management
-    Route::post('/signature/upload', [SignatureController::class, 'store'])->name('signature.upload');
-    Route::delete('/signature/delete', [SignatureController::class, 'delete'])->name('signature.delete');
+    // Saved e-signatures (JSON, used by Settings › E-signature and the
+    // signing preview). They need no shared page props.
+    Route::withoutMiddleware(HandleInertiaRequests::class)->group(function () {
+        Route::get('/signatures', [SignatureController::class, 'index'])->name('signatures.index');
+        Route::post('/signatures', [SignatureController::class, 'store'])->name('signatures.store');
+        Route::patch('/signatures/{signature}/default', [SignatureController::class, 'makeDefault'])->name('signatures.make-default')->middleware('can:manage,signature');
+        Route::delete('/signatures/{signature}', [SignatureController::class, 'destroy'])->name('signatures.destroy')->middleware('can:manage,signature');
+    });
+
+    // Uploaded files (e-signatures, profile photos, property images). A file
+    // needs no shared page props, which cost queries on every request.
+    Route::get('/files/{path}', [UploadController::class, 'show'])
+        ->where('path', '('.implode('|', Uploads::FOLDERS).')/[A-Za-z0-9][A-Za-z0-9._-]*')
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->name('uploads.show');
 
     /*
     |--------------------------------------------------------------------------
@@ -213,6 +232,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware(['requester'])->group(function () {
         Route::get('/staff-dashboard', [StaffDashboardController::class, 'index'])->name('staff.dashboard');
         Route::get('/my-requests', [StaffDashboardController::class, 'requests'])->name('staff.requests');
+        Route::get('/my-requests/new', [StaffDashboardController::class, 'newRequest'])->name('staff.new-request')->middleware('can:ris.request');
         Route::get('/my-received-supplies', [StaffDashboardController::class, 'received'])->name('staff.received');
         Route::get('/my-properties', [StaffDashboardController::class, 'properties'])->name('staff.properties');
         Route::get('/force-change-password', [StaffDashboardController::class, 'showChangePasswordForm'])->name('user.force-change-password');

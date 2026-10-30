@@ -48,7 +48,7 @@ test('each section has its own page', function () {
     $this->actingAs($staff)->get(route('staff.requests'))->assertInertia(fn (Assert $page) => $page
         ->component('staff/requests')
         ->has('myRequests.data')
-        // The Request supply dialog's supplies load only when it opens.
+        // The supplies are on the New request page, not here.
         ->missing('supplies')
         ->missing('departments'));
 
@@ -56,7 +56,7 @@ test('each section has its own page', function () {
     $this->actingAs($staff)->get(route('staff.properties'))->assertInertia(fn (Assert $page) => $page->component('staff/properties'));
 });
 
-test('the request dialog loads the supplies on demand', function () {
+test('the new request page lists what can be requested', function () {
     $staff = User::factory()->create();
     DB::table('supplies')->insert([
         ['supply_id' => 1, 'stock_no' => '01', 'item_name' => 'ALCOHOL', 'unit_of_measurement' => 'GALLON', 'reorder_point' => 5, 'created_at' => now(), 'updated_at' => now()],
@@ -69,24 +69,40 @@ test('the request dialog loads the supplies on demand', function () {
         ['supply_id' => 2, 'quantity_on_hand' => 0, 'status' => 'depleted', 'fund_cluster' => '101', 'created_at' => now(), 'updated_at' => now()],
     ]);
 
-    $this->actingAs($staff)->get(route('staff.requests'))
+    $this->actingAs($staff)->get(route('staff.new-request'))
         ->assertInertia(fn (Assert $page) => $page
-            ->missing('supplies')
-            ->reloadOnly(['supplies', 'departments'], fn (Assert $reload) => $reload
-                ->has('supplies', 2)
-                ->where('supplies.0', [
-                    'supply_id' => 1,
-                    'name' => 'ALCOHOL',
-                    'description' => null,
-                    'stock_no' => '01',
-                    'unit' => 'GALLON',
-                    'category' => null,
-                    'reorder_point' => 5,
-                    'available' => 10,
-                ])
-                // Out of stock comes last.
-                ->where('supplies.1.name', 'BALLPEN')
-                ->where('supplies.1.available', 0)));
+            ->component('staff/request-create')
+            ->has('departments')
+            ->has('supplies', 2)
+            ->where('supplies.0', [
+                'supply_id' => 1,
+                'name' => 'ALCOHOL',
+                'description' => null,
+                'stock_no' => '01',
+                'unit' => 'GALLON',
+                'category' => null,
+                'reorder_point' => 5,
+                'available' => 10,
+            ])
+            // Out of stock comes last.
+            ->where('supplies.1.name', 'BALLPEN')
+            ->where('supplies.1.available', 0));
+});
+
+test('old "Request supply" links open the new request page, and a sent request goes back to the list', function () {
+    $staff = User::factory()->create();
+    $division = DB::table('departments')->insertGetId(['name' => 'Technical Division', 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('supplies')->insert(['supply_id' => 1, 'stock_no' => '01', 'item_name' => 'ALCOHOL', 'unit_of_measurement' => 'GALLON', 'reorder_point' => 0, 'created_at' => now(), 'updated_at' => now()]);
+    DB::table('supply_stocks')->insert(['supply_id' => 1, 'quantity_on_hand' => 10, 'status' => 'available', 'fund_cluster' => '101', 'created_at' => now(), 'updated_at' => now()]);
+
+    $this->actingAs($staff)->get(route('staff.requests', ['new' => 1]))->assertRedirect(route('staff.new-request'));
+
+    $this->actingAs($staff)->from(route('staff.new-request'))->post(route('ris.store'), [
+        'entity_name' => 'CHEDRO 12', 'division' => $division, 'office' => 'Technical Division',
+        'fund_cluster' => '', 'responsibility_center_code' => '', 'purpose' => '',
+        'supplies' => [['supply_id' => 1, 'quantity' => 2]],
+        'signature_type' => 'sgd',
+    ])->assertRedirect(route('staff.requests'))->assertSessionHas('success');
 });
 
 test('old single-page links go to the matching page', function () {

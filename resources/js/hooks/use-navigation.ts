@@ -14,6 +14,7 @@ import {
     LayoutGrid,
     Laptop,
     MapPin,
+    MessagesSquare,
     Package,
     PackageCheck,
     Palette,
@@ -34,6 +35,7 @@ import { index as categoriesIndex } from '@/routes/categories';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as designationsIndex } from '@/routes/designations';
 import { index as locationsIndex } from '@/routes/location';
+import { index as messagesIndex } from '@/routes/messages';
 import { edit as editProfile } from '@/routes/profile';
 import { index as propertiesIndex } from '@/routes/property';
 import { index as risIndex } from '@/routes/ris';
@@ -179,6 +181,13 @@ export function useNavigation(): NavGroup[] {
         return [];
     }
 
+    // Requests and concerns with the supply office (a preview for now).
+    const messagesItem: NavItem = {
+        title: 'Messages',
+        href: messagesIndex(),
+        icon: MessagesSquare,
+    };
+
     if (!can('dashboard.view') || auth.isAdminUserMode) {
         return [
             {
@@ -191,6 +200,7 @@ export function useNavigation(): NavGroup[] {
                             : staffDashboard(),
                         icon: LayoutGrid,
                     },
+                    messagesItem,
                 ],
             },
             {
@@ -200,6 +210,8 @@ export function useNavigation(): NavGroup[] {
                         title: 'My requests',
                         href: staffRequests(),
                         icon: ClipboardList,
+                        // Also on New request (/my-requests/new).
+                        matchPrefix: true,
                         // Approved, waiting to be issued.
                         badge: notifications?.approved_requests_count ?? 0,
                     },
@@ -243,6 +255,7 @@ export function useNavigation(): NavGroup[] {
                         icon: LayoutGrid,
                         permission: 'dashboard.view',
                     },
+                    messagesItem,
                 ],
             },
             {

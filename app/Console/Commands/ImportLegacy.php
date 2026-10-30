@@ -155,7 +155,9 @@ class ImportLegacy extends Command
             return self::FAILURE;
         }
 
-        $this->components->info(sprintf('Built %s in %.1f s. To use it: set DB_DATABASE=%s in .env, then run php artisan config:clear.', $target, microtime(true) - $started, $target));
+        $this->components->info(sprintf('Built %s in %.1f s. ', $target, microtime(true) - $started).($target === ($base['database'] ?? null)
+            ? 'The app already uses it.'
+            : "To use it: set DB_DATABASE={$target} in .env, then run php artisan config:clear."));
 
         return self::SUCCESS;
     }

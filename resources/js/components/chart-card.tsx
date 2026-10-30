@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 import {
     Card,
     CardContent,
@@ -14,12 +15,15 @@ export function ChartCard({
     actions,
     children,
     className,
+    contentClassName,
 }: {
     title: string;
     description?: ReactNode;
     actions?: ReactNode;
     children: ReactNode;
     className?: string;
+    /** E.g. "flex flex-1 flex-col" to pin a footer to the card's bottom. */
+    contentClassName?: string;
 }) {
     return (
         <Card className={className}>
@@ -32,7 +36,9 @@ export function ChartCard({
                 </div>
                 {actions}
             </CardHeader>
-            <CardContent>{children}</CardContent>
+            <CardContent className={cn(contentClassName)}>
+                {children}
+            </CardContent>
         </Card>
     );
 }

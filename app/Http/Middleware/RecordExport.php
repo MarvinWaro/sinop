@@ -21,7 +21,6 @@ class RecordExport
 {
     /** Route name => [module, report name, format]. */
     private const ROUTES = [
-        'ris.print' => [ActivityModule::Ris, 'RIS', 'print'],
         'ris.export-excel' => [ActivityModule::Ris, 'RIS', 'Excel'],
         'stock-cards.export-pdf' => [ActivityModule::Reports, 'Stock card', 'PDF'],
         'stock-cards.export-excel' => [ActivityModule::Reports, 'Stock card', 'Excel'],

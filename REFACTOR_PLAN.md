@@ -19,8 +19,11 @@ The Livewire/Blade app has been ported to the Laravel React starter kit and it r
 | -------- | -------------------------------------------------------------------------- |
 | Backend  | Laravel 13, Fortify, Inertia v3, Wayfinder, Pest                           |
 | Frontend | React 19, TypeScript, Tailwind v4, shadcn/ui (Radix), Vite+ (`vp`), sonner |
-| Database | MySQL, database `cims`, 24 app tables, 27 migrations already recorded      |
-| Extras   | dompdf, endroid/qr-code, phpspreadsheet, Pusher (optional)                 |
+| Database | MySQL: `sinop_dev` locally (built from live exports), `sys_sinop` on Berth |
+| Files    | Berth S3 bucket (Garage), served at `/files/...` (see `DEPLOYMENT.md`)     |
+| Extras   | dompdf, endroid/qr-code, phpspreadsheet (used, not installed yet), Pusher  |
+
+Deployment, databases, uploaded files and the go-live steps: **`DEPLOYMENT.md`**.
 
 Known state:
 
@@ -69,6 +72,7 @@ These apply to every module. If a rule must be broken, write down why in the dec
    4. Smoke test as admin, CAO and staff, then switch over.
    - Rehearse every step on `sinop_dev` with each new export.
    - Never build the live database with `migrate:fresh` followed by a data import: the role migration would run on an empty users table, and every account would be left without access.
+   - The full runbook, with Coolify and Berth settings and copying the uploaded files, is in `DEPLOYMENT.md`.
 
 ### Backend
 
@@ -152,7 +156,7 @@ data before any change, and handled inside the module that owns the table.
 | D20 | Issue lines without fund cluster    | `RisSlipController@issue` doesn't save `fund_cluster`: 1,316 lines. RSMI screen vs PDF and RPCI then disagree.                 | Write it on issue; backfill from the RIS slip.                                                             | 5      |
 | D21 | Stock re-value                      | Adds an "adjustment" line dated on the IAR but carrying today's quantity, so card, ledger, RSMI and RPCI balances can go negative. The IAR line keeps the old cost. | Part of the `StockLedger` work. Before/after reports are signed off.                                       | 5      |
 | D22 | `user_transactions`                 | Never written for manual RIS, so 931 received slips are missing from the staff "Received supplies" page. | Derive "received" from `ris_slips.received_by`, or backfill.                                               | 1      |
-| D23 | Signed RIS forms change             | Signatory names, designations and signatures are looked up live, so editing a person rewrites past forms. `ris_slips.office` is a half-snapshot. | `ris_slip_signatories` snapshot at signing (with D9, D10).                                                 | 6      |
+| D23 | Signed RIS forms change             | Signatory names, designations and signatures are looked up live, so editing a person rewrites past forms. `ris_slips.office` is a half-snapshot. | `ris_slip_signatories` snapshot at signing (with D9, D10). E-signatures are frozen since 2026-10-30 (`ris_slip_signatures`); names and designations are still live. | 6      |
 | D24 | Reused rows / caches                | Adding a location or property overwrites a removed one (its ID, history, QR). Property QR images are cached and keep old names. | Stop the reuse; regenerate the QR on change.                                                               | 2, 9   |
 | D25 | Dropped values                      | `storeManual` sends `cao_name`, `cao_designation`, `created_at`, `updated_at`; none are fillable, so they are silently lost. The RIS "Requested" date shows the typing date, not the RIS date. | Decide what to keep; write it explicitly.                                                                 | 6      |
 
@@ -379,6 +383,20 @@ only the middle scrolls.
   `animate-shimmer` in app.css), the floating cards, and a dot-grid spotlight. The spotlight is
   rAF-batched and writes CSS variables, so it causes no React re-renders.
 
+**Uploads on S3 (2026-10-30).** E-signatures, profile photos and property images go to the uploads disk
+(`UPLOADS_DISK`: Berth's Garage bucket, or `public`).
+
+- `App\Support\Uploads` is the one place for the disk, the URL and a local copy (Excel signature drawings).
+- The browser loads files from `/files/<path>` (`UploadController`): signed-in users only, the three upload folders only,
+  cached by the browser. The bucket stays private; the stored paths are unchanged.
+- Changed callers: `User` (photo, avatar, signature), `PropertyImage`, `SignatureController`, `PropertyController`
+  (images only), `NotificationResource`, the RIS Excel export and `ris/print.blade.php` (it used the default disk).
+- One folder per environment in the bucket, named after `APP_ENV` (`local/`, `production/`; `AWS_ROOT` overrides),
+  so local test uploads can be wiped without touching the live files.
+- `php artisan sinop:copy-uploads [folder]` copies existing files and lists any still missing.
+- Property QR images stay in `storage/app/public/qrcodes` until module 9.
+- Tests: `tests/Feature/UploadsTest.php` (the bucket is faked); `phpunit.xml` pins `UPLOADS_DISK=public`.
+
 **Next phase:** backend and table structure, step by step (section 3, D1–D17), starting with
 the foundation items (enums, baseline commit) and Users/roles.
 
@@ -432,11 +450,7 @@ _Not started as a module._ One fix landed ahead of it:
   - On `supplies.N.quantity` errors the dialog maps them to supply ids and shows an amber "Someone requested some of these items first" notice. It refreshes the list, notes "Only N left now (you asked for M)" or "None left" on each affected row, and offers **Update to what's left**.
   - Server messages are unchanged and are used as the fallback.
 - **Catalog in state:** the dialog's `supplies` and `departments` live in `pages/staff/requests.tsx` state, filled from `onSuccess(page)`. Before, the page reload after a failed submit or an upload dropped the optional props and blanked Division, Office and the items.
-- **E-signature upload:**
-  - `components/signature-upload.tsx` has no `<form>` and uses a `type="button"` save, because it is rendered inside other forms. It is shared by Settings › E-signature and `SignatureChoice`.
-  - With no signature, the choice offers "Upload one now"; once saved, E-signature is selected.
-  - This applies wherever `SignatureChoice` is used: request, approve, issue and receive.
-- **Tests:** `tests/Feature/SignatureUploadTest.php`.
+- **E-signature upload:** replaced by the signing preview, see "E-signature studio" below.
 
 **Purpose is optional (2026-10-30).** It is optional in both Request supplies and the admin Manual RIS entry.
 
@@ -447,6 +461,60 @@ _Not started as a module._ One fix landed ahead of it:
 - **Database:** no schema change; `ris_slips.purpose` was already nullable.
 - **Display:** an empty purpose shows "—" on Review, "N/A" on the RIS page, and a blank line on the printout.
 - **Tests:** `tests/Feature/RisPurposeOptionalTest.php`.
+
+**Print removed; exports fixed (2026-10-30).**
+
+- **Print:** the RIS Print button, route, controller method and `resources/views/ris/print.blade.php` are removed (Marvin: not needed for now). Old "Printed" log entries still show. It is in git if wanted back.
+- **Exports:**
+  - `phpoffice/phpspreadsheet` and `barryvdh/laravel-dompdf` are installed.
+  - The five Excel exports (RIS, stock card, ledger card, RSMI, RPCI) used `header()` + `exit`, so they were never logged and temporary files were never deleted. They now return `App\Support\ExcelDownload::response()`.
+  - All 11 export URLs return 200 on `sinop_dev`.
+- **Tests:** `tests/Feature/RisExportTest.php`.
+
+**E-signature studio (2026-10-30).** Like the DTR's "Sign & print": a preview of the form, saved signatures, drag to place, Apply.
+
+- **Decisions (Marvin):**
+  - A signer places their signature only inside their own box.
+  - Up to 10 saved signatures each, one of them the default.
+  - A signed RIS keeps the image and position used at signing (D23).
+- **Data** (additive):
+  - `user_signatures` (name, source drawn/typed/uploaded, path, is_default). The migration copies each `users.signature_path` in as the default.
+  - `users.signature_path` stays, kept equal to the default by `App\Services\SignatureLibrary`.
+  - `ris_slip_signatures` (ris_id, step, user_id, path, x, y, width, rotation, signed_at; unique ris_id + step). `path` is a copy in `ris-signatures/`. Placement is stored as fractions of the signer's box.
+- **Boxes:** `App\Support\RisSignatureBox` (PHP) and `resources/js/lib/signature-placement.ts` (TS) share the Excel column widths, so the preview, the RIS page and the Excel file put a signature in the same spot.
+- **Signing:**
+  - `App\Support\RisSignaturePlacement::rules()` and `record()`, called from `store`, `approve`, `issue` and `receive`.
+  - E-sign needs `signature: {id, x, y, width, rotation}` from one of the signer's own saved signatures. SGD needs nothing, as before. Decline stays SGD.
+- **Excel:** the four copy-pasted drawing blocks are one loop (`drawSignature`). Slips signed before this use the person's current signature at the old position.
+  - Their `catch` caught nothing (`Exception` without an import). A bad image now falls back to "SGD" as intended.
+- **Background removal, no library:**
+  - The browser runs `lib/signature-image.ts`: the paper colour is the median of the edges, the ink is separated from it, and the image is trimmed.
+  - `App\Support\SignatureInk` is the same rule in GD. It is used by `php artisan sinop:clean-signatures` for signatures uploaded before this; that command is idempotent and writes new file names because `/files` is cached as immutable.
+  - Dark mode shows ink with `dark:invert dark:hue-rotate-180` (blue stays blue). This replaces `mix-blend-multiply dark:invert`, which made the black box.
+- **Frontend (`components/signature/`):**
+  - `signature-studio.tsx`: the "Sign" dialog.
+  - `ris-form-preview.tsx`: Appendix 63 in HTML, scaled with `cqw`.
+  - `placement-editor.tsx`: pointer-event drag, resize and tilt; keyboard arrows, +/− and [ ].
+  - `signature-creator-dialog.tsx`: Draw with `signature_pad`, Type with `@fontsource` Great Vibes, Allura or Sacramento, Upload.
+  - `signature-library.tsx` and `signature-box.tsx`.
+  - The studio and creator are `React.lazy` chunks (about 6 KB and 9 KB gzipped); fonts load only when used.
+  - JSON endpoints: `signatures.*` and `ris.document`, without the Inertia middleware.
+- **Tests:** `SignatureLibraryTest`, `RisSignatureTest`, `RisExportTest`, `CleanSignaturesTest`. There is also a real-mouse browser walk in throwaway SQLite: create drawn, typed and uploaded signatures, approve with a dragged and tilted signature, then request as staff, creating a signature inside the preview.
+
+**New request page (2026-10-30).** Request supplies moved out of the dialog to `/my-requests/new` (`staff.new-request`, `pages/staff/request-create.tsx`). The dialog had grown into a workflow, and signing stacked three dialogs.
+
+- **Step 1, Items:**
+  - A dense catalog list with category tabs and search (press `/` to jump to it). Add puts in 1; the quantity is then changed in the row. The request panel on the right is sticky; phones get a bottom bar instead.
+  - The old "Add all to request" button is gone, because quantities now go straight into the request.
+- **Step 2, Review & sign:** the Appendix 63 preview updates live as the details are typed, next to the details, the signature choice and Submit. The Sign window opens over the page, never over another dialog.
+- **Draft:** the request (not the signature) is kept in `localStorage` per user until it is submitted, so a refresh or a stray Back doesn't lose it ("Picked up where you left off · Start over").
+- **Stock conflicts:** unchanged. The page reloads `supplies` and returns to step 1 with the notice. Other errors stay on step 2.
+- **Server:**
+  - `ris.store` now redirects to `staff.requests` (it used `back()`, which would land on the new page).
+  - `/my-requests?new` redirects to the new page.
+  - The My requests page no longer carries the optional `supplies` and `departments` props.
+- **Moved and removed:** shared pieces live in `components/staff/request-parts.tsx`. `request-supply-dialog.tsx` is removed. `SignatureChoice` gained `showPreview` and passes the image URL to `onSignatureChange`.
+- **Tests:** `StaffPagesTest`. There is also a real-mouse walk in throwaway SQLite at desktop (light and dark) and phone width: add, reload restores the draft, e-sign, submit, back on the list with the draft cleared.
 
 ### 7 · RSMI reports & analytics
 
@@ -462,7 +530,11 @@ _Not started._
 
 ### 10 · Dashboards
 
-_Not started._
+**Mini graphs in the yearly analytics (2026-10-30).** Used on the admin dashboard and RSMI › Yearly analytics (`components/analytics/yearly-issuance-analytics.tsx`). They fill the space beside the 12-row Monthly breakdown with figures that are not already on the page.
+
+- **Top categories › Average cost per item:** total ÷ line items per category.
+- **Yearly insights › Spending by month:** 12 columns grouped by quarter, with the busiest month in the accent colour and the strongest quarter named. Hover or focus shows the value; the table beside it has every figure.
+- `ChartCard` gained `contentClassName` so a footer can sit at the bottom of the card.
 
 ### 11 · Notifications & real-time
 
@@ -523,6 +595,17 @@ _Not started._
   - Office is filled from the division: the part after " - " ("Scholarship Division - UniFAST BARMM" → "UniFAST BARMM"), or the whole name when there is no dash.
   - It stays editable. Typed text is kept when the division changes; a cleared Office follows the division again.
 
+**Messages preview (2026-10-30), static, sample data.** The planned chat between requesters and the supply office, shown so the layout can be judged before it is built.
+
+- **Where:** `/messages` (`Route::inertia`, every signed-in user), a Messages item in Overview, and a message icon beside the bell.
+- **Layout:** three panes. Conversations (All / Requests / Concerns, search), the thread, and what it is about (the RIS and its items, or the concern), plus the people.
+  - The thread shows the request's own events (submitted, approved, issued), attachments, a typing indicator and quick replies.
+  - The office side sees the shared inbox ("Needs reply"); staff see their own threads ("Awaiting reply").
+- **Preview limits:**
+  - The data is in `components/messages/sample-conversations.ts`; nothing is saved, and actions show a "Preview only" toast.
+  - It is labelled "Preview" on the page.
+  - The real module will reuse `components/messages/message-parts.tsx`.
+
 ### 12 · Hardening & release
 
 _Not started._
@@ -531,10 +614,10 @@ _Not started._
 
 ## 7. Open questions for Marvin
 
-1. Is `cims` a live production database people use today? If yes, is there a staging copy to test
-   migrations on?
-2. Where is it deployed (shared hosting without SSH, VPS, local office server)? This decides how
-   migrations, queues and `storage:link` run.
+1. ~~Is `cims` a live production database?~~ Answered: the old system is live; its exports are the
+   source, and `sinop_dev` is the working copy (section 2, rule 6).
+2. ~~Where is it deployed?~~ Answered: Hostinger VPS with Coolify; MySQL, S3 and WebSocket from Berth
+   (`DEPLOYMENT.md`).
 3. Are schema changes allowed (new tables/columns, backfills), or must the old app keep working on
    the same database during the transition?
 4. Brand: official name, logo, and colours to use for the UI. Is "SINOP" the final product name?
@@ -556,3 +639,7 @@ _Not started._
 | 2026-10-29 | Printed government forms keep their official layout                             | Compliance                                      |
 | 2026-10-29 | SAP Fiori is the only theme for now; a picker may come later                     | Match Marvin's other systems; keep it simple   |
 | 2026-10-29 | Users and reference lists live under Settings, URLs unchanged                   | Same admin layout as PHLGADIS; no broken links  |
+| 2026-10-30 | Develop on `sinop_dev`, rebuilt from live exports by `sinop:import-legacy`       | Test data never mixes with real data            |
+| 2026-10-30 | Uploads on Berth's S3 bucket, private, served through the app at `/files`       | Survives redeploys; access stays with the app   |
+| 2026-10-30 | RIS Print removed for now; Excel export is the form                              | Marvin: not needed                              |
+| 2026-10-30 | Signers place e-signatures in their own box only; signed RIS keep a frozen copy | Form stays valid; past forms never change (D23) |

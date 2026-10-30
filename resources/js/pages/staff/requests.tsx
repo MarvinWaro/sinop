@@ -1,17 +1,13 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import { Eye, Plus } from 'lucide-react';
-import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { SearchForm } from '@/components/search-form';
-import { RequestSupplyDialog } from '@/components/staff/request-supply-dialog';
-import type { RequestableSupply } from '@/components/staff/request-supply-dialog';
 import { UserModeNotice } from '@/components/staff/user-mode-notice';
 import { RisStatusBadge } from '@/components/status-badges';
 import { TablePanel } from '@/components/table-panel';
 import { Button } from '@/components/ui/button';
-import { Spinner } from '@/components/ui/spinner';
 import {
     Table,
     TableBody,
@@ -25,10 +21,8 @@ import { useLiveProps } from '@/hooks/use-inbox';
 import { formatDate, formatTime, truncate } from '@/lib/format';
 import { risKey } from '@/lib/ris';
 import { show as showRis } from '@/routes/ris';
-import { requests as staffRequests } from '@/routes/staff';
-import type { Department, Paginated, RisSlip } from '@/types';
-
-const SUPPLIES_FRESH_FOR = 30_000;
+import { newRequest, requests as staffRequests } from '@/routes/staff';
+import type { Paginated, RisSlip } from '@/types';
 
 export type RequestCounts = {
     total: number;
@@ -40,116 +34,17 @@ export type RequestCounts = {
     toReceive: number;
 };
 
-/** What the Request supply dialog needs, loaded on demand. */
-type Catalog = {
-    supplies: RequestableSupply[];
-    departments: Pick<Department, 'id' | 'name'>[];
-};
-
 type Props = {
     counts: RequestCounts;
     myRequests: Paginated<RisSlip & { items_count?: number }>;
     filters: { status?: string; search?: string };
-} & Partial<Catalog>;
+};
 
 export default function StaffRequests({ counts, myRequests, filters }: Props) {
     const can = useCan();
-    const { auth } = usePage().props;
-    const [requesting, setRequesting] = useState(false);
-    const [loadingDialog, setLoadingDialog] = useState(false);
 
     // A status change (approved, issued, …) shows here without a refresh.
     useLiveProps(['myRequests', 'counts']);
-
-    // The supply list (with what's left to request) loads on demand: in the
-    // background when "Request supply" is hovered or focused, so a click
-    // usually opens at once, and again when it's older than 30 s. Submitting
-    // re-checks the stock on the server either way.
-    //
-    // It's kept in state rather than read from the props: they're optional
-    // props, so the page reload after a failed submit or a signature upload
-    // leaves them out, which would empty the Division list and the items.
-    const [catalog, setCatalog] = useState<Catalog | null>(null);
-    const suppliesLoadedAt = useRef(0);
-    const loadingSupplies = useRef(false);
-    const openWhenLoaded = useRef(false);
-
-    const loadSupplies = () => {
-        if (loadingSupplies.current) {
-            return;
-        }
-
-        loadingSupplies.current = true;
-        router.reload({
-            only: ['supplies', 'departments'],
-            async: true,
-            onSuccess: (page) => {
-                const { supplies, departments } =
-                    page.props as Partial<Catalog>;
-
-                if (supplies && departments) {
-                    setCatalog({ supplies, departments });
-                    suppliesLoadedAt.current = Date.now();
-                }
-
-                if (openWhenLoaded.current) {
-                    setRequesting(true);
-                }
-            },
-            onFinish: () => {
-                loadingSupplies.current = false;
-                openWhenLoaded.current = false;
-                setLoadingDialog(false);
-            },
-        });
-    };
-
-    const prefetchSupplies = () => {
-        if (
-            !catalog ||
-            Date.now() - suppliesLoadedAt.current > SUPPLIES_FRESH_FOR
-        ) {
-            loadSupplies();
-        }
-    };
-
-    const openRequest = () => {
-        if (catalog) {
-            setRequesting(true);
-            prefetchSupplies();
-
-            return;
-        }
-
-        // Not loaded yet (or still loading from the hover): wait for it.
-        openWhenLoaded.current = true;
-        setLoadingDialog(true);
-        loadSupplies();
-    };
-
-    // "Request supply" on the dashboard links here with ?new: open it once.
-    const [openOnArrival] = useState(
-        () =>
-            typeof window !== 'undefined' &&
-            new URLSearchParams(window.location.search).has('new'),
-    );
-    const openFromLink = useEffectEvent(openRequest);
-
-    useEffect(() => {
-        if (!openOnArrival) {
-            return;
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        params.delete('new');
-        window.history.replaceState(
-            window.history.state,
-            '',
-            `${window.location.pathname}${params.size ? `?${params}` : ''}`,
-        );
-
-        openFromLink();
-    }, [openOnArrival]);
 
     const statusLinks: { value: string; label: string; count: number }[] = [
         { value: '', label: 'Total', count: counts.total },
@@ -177,14 +72,11 @@ export default function StaffRequests({ counts, myRequests, filters }: Props) {
                     description="Track and manage your supply requisition requests"
                     actions={
                         can('ris.request') && (
-                            <Button
-                                onClick={openRequest}
-                                onPointerEnter={prefetchSupplies}
-                                onFocus={prefetchSupplies}
-                                disabled={loadingDialog}
-                            >
-                                {loadingDialog ? <Spinner /> : <Plus />}
-                                Request supply
+                            <Button asChild>
+                                <Link href={newRequest()}>
+                                    <Plus />
+                                    Request supply
+                                </Link>
                             </Button>
                         )
                     }
@@ -322,15 +214,6 @@ export default function StaffRequests({ counts, myRequests, filters }: Props) {
                     <DataPagination paginator={myRequests} />
                 </div>
             </PageContainer>
-
-            <RequestSupplyDialog
-                open={requesting}
-                onOpenChange={setRequesting}
-                supplies={catalog?.supplies ?? []}
-                departments={catalog?.departments ?? []}
-                onStockChange={loadSupplies}
-                defaultDivision={auth.user.department_id}
-            />
         </>
     );
 }

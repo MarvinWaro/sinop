@@ -17,6 +17,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Uploads Disk
+    |--------------------------------------------------------------------------
+    |
+    | Where people's files go: e-signatures, profile photos and property
+    | images. "s3" is the system's bucket in Berth (Garage); "public" keeps
+    | them in storage/app/public, for working without the bucket. Either way
+    | the app serves them at /files/... to signed-in users (App\Support\Uploads).
+    |
+    */
+
+    'uploads' => env('UPLOADS_DISK', 'public'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Filesystem Disks
     |--------------------------------------------------------------------------
     |
@@ -56,7 +70,22 @@ return [
             'url' => env('AWS_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
-            'throw' => false,
+            // Each environment has its own folder in the bucket, named after
+            // APP_ENV: "local/" on a laptop, "production/" on the server. Local
+            // testing can then be wiped without touching the live files.
+            // AWS_ROOT overrides the name.
+            'root' => env('AWS_ROOT') ?: env('APP_ENV', 'production'),
+            // Private: the app serves the files (App\Support\Uploads).
+            'visibility' => 'private',
+            // Copies get the visibility above instead of reading the source's
+            // ACL: Garage has no ACLs (GetObjectAcl → 501 Not Implemented).
+            'retain_visibility' => false,
+            // S3-compatible servers such as Garage can reject the checksums
+            // newer AWS SDKs add to every request; send them only when required.
+            'request_checksum_calculation' => 'when_required',
+            'response_checksum_validation' => 'when_required',
+            // A failed upload must stop the save, not store an empty path.
+            'throw' => true,
             'report' => false,
         ],
 

@@ -43,6 +43,7 @@ import { userDashboard } from '@/routes/admin';
 import { show as showRis } from '@/routes/ris';
 import {
     dashboard as staffDashboard,
+    newRequest,
     received as staffReceived,
     requests as staffRequests,
 } from '@/routes/staff';
@@ -154,9 +155,7 @@ export default function StaffDashboard({
                     actions={
                         can('ris.request') && (
                             <Button asChild>
-                                <Link
-                                    href={staffRequests({ query: { new: 1 } })}
-                                >
+                                <Link href={newRequest()}>
                                     <Plus />
                                     Request supply
                                 </Link>

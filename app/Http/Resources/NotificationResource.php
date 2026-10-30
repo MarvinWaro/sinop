@@ -3,9 +3,9 @@
 namespace App\Http\Resources;
 
 use App\Models\Notification;
+use App\Support\Uploads;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * One notification as the bell and the Notifications page show it. Load
@@ -35,7 +35,7 @@ class NotificationResource extends JsonResource
             ],
             'actor' => $kind->showsActor() && $activity !== null ? [
                 'name' => $activity->actor_name,
-                'avatar' => $actor?->profile_photo_path ? Storage::disk('public')->url($actor->profile_photo_path) : null,
+                'avatar' => Uploads::url($actor?->profile_photo_path),
             ] : null,
             'sentence' => $this->sentence(),
             'read_at' => $this->read_at?->toIso8601ZuluString(),
