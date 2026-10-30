@@ -1,11 +1,11 @@
 import { Form, Head } from '@inertiajs/react';
+import { FormSelect } from '@/components/form-select';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TextLink from '@/components/text-link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
@@ -75,25 +75,18 @@ export default function Register({
                                 <Label htmlFor="department_id">
                                     Department
                                 </Label>
-                                <NativeSelect
+                                <FormSelect
                                     id="department_id"
                                     name="department_id"
                                     required
                                     tabIndex={3}
                                     defaultValue=""
-                                >
-                                    <option value="" disabled>
-                                        Select department
-                                    </option>
-                                    {departments.map((department) => (
-                                        <option
-                                            key={department.id}
-                                            value={department.id}
-                                        >
-                                            {department.name}
-                                        </option>
-                                    ))}
-                                </NativeSelect>
+                                    placeholder="Select department"
+                                    options={departments.map((department) => ({
+                                        value: department.id,
+                                        label: department.name,
+                                    }))}
+                                />
                                 <InputError message={errors.department_id} />
                             </div>
 
@@ -101,25 +94,20 @@ export default function Register({
                                 <Label htmlFor="designation_id">
                                     Designation
                                 </Label>
-                                <NativeSelect
+                                <FormSelect
                                     id="designation_id"
                                     name="designation_id"
                                     required
                                     tabIndex={4}
                                     defaultValue=""
-                                >
-                                    <option value="" disabled>
-                                        Select designation
-                                    </option>
-                                    {designations.map((designation) => (
-                                        <option
-                                            key={designation.id}
-                                            value={designation.id}
-                                        >
-                                            {designation.name}
-                                        </option>
-                                    ))}
-                                </NativeSelect>
+                                    placeholder="Select designation"
+                                    options={designations.map(
+                                        (designation) => ({
+                                            value: designation.id,
+                                            label: designation.name,
+                                        }),
+                                    )}
+                                />
                                 <InputError message={errors.designation_id} />
                             </div>
 
@@ -157,7 +145,7 @@ export default function Register({
 
                             <Button
                                 type="submit"
-                                className="mt-2 w-full"
+                                className="mt-2 h-10 w-full"
                                 tabIndex={7}
                                 data-test="register-user-button"
                             >

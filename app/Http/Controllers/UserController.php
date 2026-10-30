@@ -9,6 +9,7 @@ use App\Models\Designation;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\ActivityRecorder;
+use App\Services\Notifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -103,6 +104,10 @@ class UserController extends Controller
         $user->designation_id = $validated['designation_id'];
         $user->status = $validated['status'];
         $user->save();
+
+        if ($user->wasChanged('status') && $user->status) {
+            app(Notifier::class)->accountActivated($user, $this->recorder->latestFor($user));
+        }
 
         $before = $user->roles()->orderBy('name')->pluck('name')->all();
         $user->roles()->sync($validated['roles']);

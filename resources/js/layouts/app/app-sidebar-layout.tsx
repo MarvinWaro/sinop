@@ -2,14 +2,15 @@ import { AppContent } from '@/components/app-content';
 import { AppShell } from '@/components/app-shell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AppSidebarHeader } from '@/components/app-sidebar-header';
-import { useRealtimeNotifications } from '@/hooks/use-realtime-notifications';
+import { useInboxUpdates } from '@/hooks/use-inbox';
 import type { AppLayoutProps } from '@/types';
 
 export default function AppSidebarLayout({
     children,
     breadcrumbs = [],
 }: AppLayoutProps) {
-    useRealtimeNotifications();
+    // The bell and sidebar badges: live updates, or checks now and then.
+    useInboxUpdates();
 
     return (
         <AppShell variant="sidebar">

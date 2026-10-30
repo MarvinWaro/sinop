@@ -1,24 +1,16 @@
 <?php
 
+use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
 /*
 |--------------------------------------------------------------------------
 | Broadcast Channels
 |--------------------------------------------------------------------------
+| Private channels are signed at /broadcasting/auth with the person's
+| session (bootstrap/app.php). Signals carry no data; pages ask the server
+| again, which decides what each reader may see.
 */
 
-// New requests: for whoever approves requisitions.
-Broadcast::channel('cao-notifications', function ($user) {
-    return $user->can('ris.approve');
-});
-
-// Approved requests to issue: for whoever issues supplies.
-Broadcast::channel('admin-notifications', function ($user) {
-    return $user->can('ris.issue');
-});
-
-// User-specific channel
-Broadcast::channel('user.{id}', function ($user, $id) {
-    return (int) $user->id === (int) $id;
-});
+// Each person's own channel: their notifications changed (App\Events\InboxUpdated).
+Broadcast::channel('App.Models.User.{id}', fn (User $user, int $id): bool => (int) $user->getKey() === $id);

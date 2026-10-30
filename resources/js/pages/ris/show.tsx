@@ -10,6 +10,7 @@ import {
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { FormField } from '@/components/form-field';
+import { FormSelect } from '@/components/form-select';
 import InputError from '@/components/input-error';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { SignatureChoice } from '@/components/signature-choice';
@@ -28,7 +29,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Table,
     TableBody,
@@ -38,6 +38,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { useLiveProps } from '@/hooks/use-inbox';
 import { formatDateTime, formatLongDate, toNumber } from '@/lib/format';
 import { risKey, supplyLabel } from '@/lib/ris';
 import {
@@ -88,6 +89,8 @@ const receiveTerms = [
 
 export default function RisShow({ risSlip, recipients, permissions }: Props) {
     const { errors } = usePage().props as { errors?: Record<string, string> };
+    // Approved, issued or received elsewhere: the slip updates here.
+    useLiveProps(['risSlip', 'permissions']);
     const [approving, setApproving] = useState(false);
     const [declining, setDeclining] = useState(false);
     const [issuing, setIssuing] = useState(false);
@@ -492,16 +495,17 @@ function ApproveDialog({
                         htmlFor="approve-fund-cluster"
                         error={form.errors.fund_cluster}
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="approve-fund-cluster"
                             value={form.data.fund_cluster}
-                            onChange={(e) =>
-                                form.setData('fund_cluster', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('fund_cluster', value)
                             }
-                        >
-                            <option value="101">101</option>
-                            <option value="151">151</option>
-                        </NativeSelect>
+                            options={[
+                                { value: '101', label: '101' },
+                                { value: '151', label: '151' },
+                            ]}
+                        />
                     </FormField>
                     <SignatureChoice
                         value={form.data.signature_type}
@@ -867,33 +871,24 @@ function IssueDialog({
                         error={form.errors.received_by}
                         required
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="received_by"
                             value={form.data.received_by}
-                            onChange={(e) =>
-                                form.setData('received_by', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('received_by', value)
                             }
                             required
-                        >
-                            <option value="" disabled>
-                                Select recipient...
-                            </option>
-                            {recipients.map((group) => (
-                                <optgroup
-                                    key={group.department}
-                                    label={group.department}
-                                >
-                                    {group.users.map((user) => (
-                                        <option key={user.id} value={user.id}>
-                                            {user.name}
-                                            {user.designation
-                                                ? ` - ${user.designation}`
-                                                : ''}
-                                        </option>
-                                    ))}
-                                </optgroup>
-                            ))}
-                        </NativeSelect>
+                            placeholder="Select recipient..."
+                            groups={recipients.map((group) => ({
+                                label: group.department,
+                                options: group.users.map((user) => ({
+                                    value: user.id,
+                                    label: user.designation
+                                        ? `${user.name} - ${user.designation}`
+                                        : user.name,
+                                })),
+                            }))}
+                        />
                     </FormField>
 
                     <SignatureChoice

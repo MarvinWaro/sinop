@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Services\ActivityRecorder;
+use App\Services\LiveUpdates;
 use App\Services\ReferenceNumberService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -17,6 +19,12 @@ class AppServiceProvider extends ServiceProvider
     {
         // Previously registered by ReferenceNumberServiceProvider.
         $this->app->singleton(ReferenceNumberService::class, fn () => new ReferenceNumberService);
+
+        // One per request: the recorder remembers the entries it wrote (so a
+        // notification can point at one), and live signals are collected
+        // and sent once after the response.
+        $this->app->scoped(ActivityRecorder::class);
+        $this->app->scoped(LiveUpdates::class);
     }
 
     /**
@@ -26,6 +34,22 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configurePermissions();
+        $this->configureBroadcasting();
+    }
+
+    /**
+     * Live updates go through Berth's Soketi app (Pusher protocol). Until its
+     * values are in .env (see SKILL.md), nothing is sent and pages fall back
+     * to checking now and then, instead of every save failing.
+     */
+    protected function configureBroadcasting(): void
+    {
+        $pusher = config('broadcasting.connections.pusher');
+
+        if (config('broadcasting.default') === 'pusher'
+            && (blank($pusher['key'] ?? null) || blank($pusher['secret'] ?? null) || blank($pusher['app_id'] ?? null))) {
+            config(['broadcasting.default' => 'null']);
+        }
     }
 
     /**

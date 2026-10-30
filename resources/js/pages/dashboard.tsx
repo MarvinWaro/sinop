@@ -17,6 +17,7 @@ import {
 } from '@/components/charts';
 import type { ChartSeries } from '@/components/charts';
 import { EmptyState } from '@/components/empty-state';
+import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { StatCard } from '@/components/stat-card';
 import { Button } from '@/components/ui/button';
@@ -27,7 +28,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useCan } from '@/hooks/use-can';
@@ -219,29 +219,28 @@ function IssuanceAnalytics({
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <NativeSelect
+                    <FormSelect
                         value={String(year)}
-                        onChange={(e) => reload({ year: e.target.value })}
+                        onValueChange={(value) => reload({ year: value })}
                         className="w-28"
                         aria-label="Analytics year"
-                    >
-                        {yearOptions.map((y) => (
-                            <option key={y} value={y}>
-                                {y}
-                            </option>
-                        ))}
-                    </NativeSelect>
-                    <NativeSelect
+                        options={yearOptions.map((y) => ({
+                            value: y,
+                            label: String(y),
+                        }))}
+                    />
+                    <FormSelect
                         value={fundCluster}
-                        onChange={(e) =>
-                            reload({ fund_cluster: e.target.value })
+                        onValueChange={(value) =>
+                            reload({ fund_cluster: value })
                         }
                         className="w-44"
                         aria-label="Analytics fund cluster"
-                    >
-                        <option value="101">Fund cluster 101</option>
-                        <option value="151">Fund cluster 151</option>
-                    </NativeSelect>
+                        options={[
+                            { value: '101', label: 'Fund cluster 101' },
+                            { value: '151', label: 'Fund cluster 151' },
+                        ]}
+                    />
                     <Button asChild variant="outline">
                         <Link
                             href={yearlyAnalytics({
@@ -343,32 +342,30 @@ function TransactionsOverview({ data }: { data: MonthlyData }) {
                     </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <NativeSelect
+                    <FormSelect
                         value={year}
-                        onChange={(event) => setYear(event.target.value)}
+                        onValueChange={(value) => setYear(value)}
                         className="w-32"
                         aria-label="Year"
-                    >
-                        <option value="all">All years</option>
-                        {years.map((y) => (
-                            <option key={y} value={y}>
-                                {y}
-                            </option>
-                        ))}
-                    </NativeSelect>
-                    <NativeSelect
+                        options={[
+                            { value: 'all', label: 'All years' },
+                            ...years.map((y) => ({ value: y, label: y })),
+                        ]}
+                    />
+                    <FormSelect
                         value={type}
-                        onChange={(event) =>
-                            setType(event.target.value as 'all' | TypeKey)
+                        onValueChange={(value) =>
+                            setType(value as 'all' | TypeKey)
                         }
                         className="w-40"
                         aria-label="Transaction type"
-                    >
-                        <option value="all">All types</option>
-                        <option value="receipt">Receipt (IN)</option>
-                        <option value="issue">Issue (OUT)</option>
-                        <option value="adjustment">Adjustment</option>
-                    </NativeSelect>
+                        options={[
+                            { value: 'all', label: 'All types' },
+                            { value: 'receipt', label: 'Receipt (IN)' },
+                            { value: 'issue', label: 'Issue (OUT)' },
+                            { value: 'adjustment', label: 'Adjustment' },
+                        ]}
+                    />
                     <ToggleGroup
                         type="single"
                         variant="outline"
@@ -489,45 +486,43 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
                     </CardDescription>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <NativeSelect
+                    <FormSelect
                         value={type}
-                        onChange={(e) =>
-                            setType(e.target.value as 'all' | TypeKey)
+                        onValueChange={(value) =>
+                            setType(value as 'all' | TypeKey)
                         }
                         className="w-36"
                         aria-label="Type"
-                    >
-                        <option value="all">All types</option>
-                        <option value="receipt">In (Receipt)</option>
-                        <option value="issue">Out (Issue)</option>
-                        <option value="adjustment">Adjustment</option>
-                    </NativeSelect>
-                    <NativeSelect
+                        options={[
+                            { value: 'all', label: 'All types' },
+                            { value: 'receipt', label: 'In (Receipt)' },
+                            { value: 'issue', label: 'Out (Issue)' },
+                            { value: 'adjustment', label: 'Adjustment' },
+                        ]}
+                    />
+                    <FormSelect
                         value={month}
-                        onChange={(e) => setMonth(e.target.value)}
+                        onValueChange={(value) => setMonth(value)}
                         className="w-36"
                         aria-label="Month"
-                    >
-                        <option value="all">All months</option>
-                        {monthNames.map((name, index) => (
-                            <option key={name} value={String(index + 1)}>
-                                {name}
-                            </option>
-                        ))}
-                    </NativeSelect>
-                    <NativeSelect
+                        options={[
+                            { value: 'all', label: 'All months' },
+                            ...monthNames.map((name, index) => ({
+                                value: String(index + 1),
+                                label: name,
+                            })),
+                        ]}
+                    />
+                    <FormSelect
                         value={year}
-                        onChange={(e) => setYear(e.target.value)}
+                        onValueChange={(value) => setYear(value)}
                         className="w-28"
                         aria-label="Year"
-                    >
-                        <option value="all">All years</option>
-                        {years.map((y) => (
-                            <option key={y} value={y}>
-                                {y}
-                            </option>
-                        ))}
-                    </NativeSelect>
+                        options={[
+                            { value: 'all', label: 'All years' },
+                            ...years.map((y) => ({ value: y, label: y })),
+                        ]}
+                    />
                 </div>
             </CardHeader>
             <CardContent>

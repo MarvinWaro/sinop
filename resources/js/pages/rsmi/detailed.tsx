@@ -1,9 +1,10 @@
 import { Head, Link } from '@inertiajs/react';
-import { ArrowLeft, BarChart3, PackageOpen, Search, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, PackageOpen, Search } from 'lucide-react';
 import { useState } from 'react';
 import { EmptyState } from '@/components/empty-state';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { MonthClusterFilter } from '@/components/reports/month-cluster-filter';
+import { SearchInput } from '@/components/search-input';
 import { TablePanel } from '@/components/table-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,7 +15,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
     Table,
     TableBody,
@@ -137,27 +137,13 @@ export default function RsmiDetailed(props: Props) {
                             fundCluster={fundCluster}
                         />
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="relative sm:w-96">
-                                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                                <Input
-                                    type="search"
-                                    value={search}
-                                    onChange={(e) => setSearch(e.target.value)}
-                                    placeholder="Search item, stock no., RIS no. or fund cluster..."
-                                    className="pr-8 pl-8"
-                                    aria-label="Search items"
-                                />
-                                {search && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setSearch('')}
-                                        className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-                                        aria-label="Clear search"
-                                    >
-                                        <X className="size-4" />
-                                    </button>
-                                )}
-                            </div>
+                            <SearchInput
+                                value={search}
+                                onValueChange={setSearch}
+                                placeholder="Search item, stock no., RIS no. or fund cluster..."
+                                aria-label="Search items"
+                                className="sm:w-96"
+                            />
                             <p className="text-sm text-muted-foreground">
                                 Showing {formatNumber(visible.length)} of{' '}
                                 {formatNumber(reportData.length)} items

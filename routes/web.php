@@ -1,11 +1,11 @@
 <?php
 
-use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PropertyController;
 use App\Http\Controllers\ReportPhysicalCountController;
 use App\Http\Controllers\ReportSuppliesMaterialsIssuedController;
@@ -37,9 +37,19 @@ Route::inertia('/', 'welcome')->name('home');
 */
 Route::middleware(['auth', 'verified'])->group(function () {
 
-    // Notification badge counts (JSON)
-    Route::get('/api/initial-counts', [NotificationController::class, 'getInitialCounts'])->middleware(['admin-cao']);
-    Route::get('/api/user-initial-counts', [NotificationController::class, 'getUserInitialCounts']);
+    // Notifications: the page, and the JSON the header bell uses. Every
+    // signed-in person has their own; the controller keeps them private.
+    Route::prefix('notifications')->name('notifications.')->controller(NotificationController::class)->group(function () {
+        Route::get('/', 'index')->name('index');
+        Route::get('/recent', 'recent')->middleware('throttle:60,1')->name('recent');
+        Route::get('/summary', 'summary')->middleware('throttle:60,1')->name('summary');
+        Route::post('/read-all', 'readAll')->name('read-all');
+        Route::whereUlid('notification')->group(function () {
+            Route::get('/{notification}', 'open')->name('open');
+            Route::patch('/{notification}', 'update')->name('update');
+            Route::delete('/{notification}', 'destroy')->name('destroy');
+        });
+    });
 
     // ==========================================
     // SHARED ROUTES - available to all authenticated users
@@ -202,6 +212,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     */
     Route::middleware(['requester'])->group(function () {
         Route::get('/staff-dashboard', [StaffDashboardController::class, 'index'])->name('staff.dashboard');
+        Route::get('/my-requests', [StaffDashboardController::class, 'requests'])->name('staff.requests');
+        Route::get('/my-received-supplies', [StaffDashboardController::class, 'received'])->name('staff.received');
+        Route::get('/my-properties', [StaffDashboardController::class, 'properties'])->name('staff.properties');
         Route::get('/force-change-password', [StaffDashboardController::class, 'showChangePasswordForm'])->name('user.force-change-password');
         Route::post('/force-change-password', [StaffDashboardController::class, 'updatePassword'])->name('user.force-change-password.update');
     });

@@ -1,42 +1,16 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
-import { useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
+import { SignatureUpload } from '@/components/signature-upload';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import {
-    deleteMethod as deleteSignature,
-    edit,
-    upload,
-} from '@/routes/signature';
+import { deleteMethod as deleteSignature, edit } from '@/routes/signature';
 
 export default function Signature() {
     const { auth } = usePage().props;
-    const fileInput = useRef<HTMLInputElement>(null);
-    const [preview, setPreview] = useState<string | null>(null);
     const [confirmRemove, setConfirmRemove] = useState(false);
     const [removing, setRemoving] = useState(false);
-
-    const form = useForm<{ signature: File | null }>({ signature: null });
-
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
-
-        form.post(upload.url(), {
-            preserveScroll: true,
-            forceFormData: true,
-            onSuccess: () => {
-                form.reset();
-                setPreview(null);
-
-                if (fileInput.current) {
-                    fileInput.current.value = '';
-                }
-            },
-        });
-    };
 
     const remove = () => {
         router.delete(deleteSignature.url(), {
@@ -89,47 +63,10 @@ export default function Signature() {
                     )}
                 </div>
 
-                <form onSubmit={submit} className="space-y-4">
-                    <div className="grid gap-2">
-                        <Label htmlFor="signature">Upload new signature</Label>
-                        <input
-                            ref={fileInput}
-                            id="signature"
-                            type="file"
-                            accept="image/png,image/jpeg,image/jpg,image/gif"
-                            onChange={(event) => {
-                                const file = event.target.files?.[0] ?? null;
-                                form.setData('signature', file);
-                                setPreview(
-                                    file ? URL.createObjectURL(file) : null,
-                                );
-                            }}
-                            className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm file:font-medium"
-                        />
-                        <p className="text-xs text-muted-foreground">
-                            PNG, JPG or GIF, up to 1 MB. A transparent PNG looks
-                            best on printed forms.
-                        </p>
-                        <InputError message={form.errors.signature} />
-                    </div>
-
-                    {preview && (
-                        <div className="rounded-md border bg-white p-4">
-                            <img
-                                src={preview}
-                                alt="New signature preview"
-                                className="mx-auto max-h-24"
-                            />
-                        </div>
-                    )}
-
-                    <Button
-                        type="submit"
-                        disabled={!form.data.signature || form.processing}
-                    >
-                        Upload signature
-                    </Button>
-                </form>
+                <SignatureUpload
+                    label="Upload new signature"
+                    saveLabel="Upload signature"
+                />
             </div>
 
             <ConfirmDialog

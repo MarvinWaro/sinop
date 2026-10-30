@@ -25,7 +25,7 @@ export type SupplyCardNavigation = {
 export const onBanner = {
     button: 'border border-band-foreground/25 bg-band-foreground/10 text-band-foreground shadow-none hover:bg-band-foreground/20 hover:text-band-foreground',
     solid: 'border-transparent bg-card text-card-foreground shadow-sm hover:bg-card/90',
-    select: 'border-transparent bg-card text-card-foreground shadow-sm dark:bg-card',
+    select: 'border-transparent bg-card text-card-foreground shadow-sm dark:bg-card dark:hover:bg-card',
 };
 
 /**

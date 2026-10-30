@@ -9,7 +9,6 @@ import {
     FileSpreadsheet,
     FolderTree,
     History,
-    Home,
     IdCard,
     KeyRound,
     LayoutGrid,
@@ -44,7 +43,12 @@ import { index as rpciIndex } from '@/routes/rpci';
 import { index as rsmiIndex } from '@/routes/rsmi';
 import { edit as editSecurity } from '@/routes/security';
 import { edit as editSignature } from '@/routes/signature';
-import { dashboard as staffDashboard } from '@/routes/staff';
+import {
+    properties as staffProperties,
+    received as staffReceived,
+    requests as staffRequests,
+    dashboard as staffDashboard,
+} from '@/routes/staff';
 import { index as stockCardsIndex } from '@/routes/stock-cards';
 import { index as stocksIndex } from '@/routes/stocks';
 import { index as supplierIndex } from '@/routes/supplier';
@@ -176,21 +180,45 @@ export function useNavigation(): NavGroup[] {
     }
 
     if (!can('dashboard.view') || auth.isAdminUserMode) {
-        const pending =
-            (notifications?.approved_requests_count ?? 0) +
-            (notifications?.pending_receipt_count ?? 0);
-
         return [
+            {
+                title: 'Overview',
+                items: [
+                    {
+                        title: 'Dashboard',
+                        href: auth.isAdminUserMode
+                            ? userDashboard()
+                            : staffDashboard(),
+                        icon: LayoutGrid,
+                    },
+                ],
+            },
             {
                 title: 'Requisitions',
                 items: [
                     {
-                        title: 'Home',
-                        href: auth.isAdminUserMode
-                            ? userDashboard()
-                            : staffDashboard(),
-                        icon: Home,
-                        badge: pending,
+                        title: 'My requests',
+                        href: staffRequests(),
+                        icon: ClipboardList,
+                        // Approved, waiting to be issued.
+                        badge: notifications?.approved_requests_count ?? 0,
+                    },
+                    {
+                        title: 'Received supplies',
+                        href: staffReceived(),
+                        icon: PackageCheck,
+                        // Issued to them, waiting for their confirmation.
+                        badge: notifications?.pending_receipt_count ?? 0,
+                    },
+                ],
+            },
+            {
+                title: 'Property',
+                items: [
+                    {
+                        title: 'My properties',
+                        href: staffProperties(),
+                        icon: Laptop,
                     },
                 ],
             },

@@ -2,9 +2,9 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft } from 'lucide-react';
 import { YearlyIssuanceAnalytics } from '@/components/analytics/yearly-issuance-analytics';
 import type { YearlyData } from '@/components/analytics/yearly-issuance-analytics';
+import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { NativeSelect } from '@/components/ui/native-select';
 import { index as rsmiIndex, yearlyAnalytics } from '@/routes/rsmi';
 
 type Props = {
@@ -45,31 +45,30 @@ export default function RsmiYearlyAnalytics({
                     description={`Fund cluster ${fundCluster}`}
                     actions={
                         <>
-                            <NativeSelect
+                            <FormSelect
                                 value={String(year)}
-                                onChange={(e) =>
-                                    visit({ year: e.target.value })
+                                onValueChange={(value) =>
+                                    visit({ year: value })
                                 }
                                 className="w-28"
                                 aria-label="Year"
-                            >
-                                {yearOptions.map((y) => (
-                                    <option key={y} value={y}>
-                                        {y}
-                                    </option>
-                                ))}
-                            </NativeSelect>
-                            <NativeSelect
+                                options={yearOptions.map((y) => ({
+                                    value: y,
+                                    label: String(y),
+                                }))}
+                            />
+                            <FormSelect
                                 value={fundCluster}
-                                onChange={(e) =>
-                                    visit({ fund_cluster: e.target.value })
+                                onValueChange={(value) =>
+                                    visit({ fund_cluster: value })
                                 }
                                 className="w-44"
                                 aria-label="Fund cluster"
-                            >
-                                <option value="101">Fund cluster 101</option>
-                                <option value="151">Fund cluster 151</option>
-                            </NativeSelect>
+                                options={[
+                                    { value: '101', label: 'Fund cluster 101' },
+                                    { value: '151', label: 'Fund cluster 151' },
+                                ]}
+                            />
                             <Button asChild variant="outline">
                                 <Link href={rsmiIndex()}>
                                     <ArrowLeft />

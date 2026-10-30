@@ -1,9 +1,8 @@
 import { router } from '@inertiajs/react';
-import { Search, X } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { SearchInput } from '@/components/search-input';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
 type QueryValue = string | number | null | undefined;
@@ -59,30 +58,17 @@ export function SearchForm({
             onSubmit={submit}
             className={cn('flex w-full gap-2 sm:w-auto', className)}
         >
-            <div className="relative flex-1 sm:w-72">
-                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                    type="search"
-                    value={value}
-                    onChange={(event) => setValue(event.target.value)}
-                    placeholder={placeholder}
-                    className="pr-8 pl-8"
-                    aria-label={placeholder}
-                />
-                {value && (
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setValue('');
-                            visit('');
-                        }}
-                        className="absolute top-1/2 right-2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-                        aria-label="Clear search"
-                    >
-                        <X className="size-4" />
-                    </button>
-                )}
-            </div>
+            <SearchInput
+                value={value}
+                onValueChange={setValue}
+                onClear={() => {
+                    setValue('');
+                    visit('');
+                }}
+                placeholder={placeholder}
+                aria-label={placeholder}
+                className="flex-1 sm:w-72"
+            />
             <Button type="submit" variant="secondary">
                 Search
             </Button>

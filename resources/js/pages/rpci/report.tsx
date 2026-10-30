@@ -3,6 +3,7 @@ import { ArrowLeft, FileSpreadsheet, Package } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { EmptyState } from '@/components/empty-state';
+import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { StatCard } from '@/components/stat-card';
 import { TablePanel } from '@/components/table-panel';
@@ -16,7 +17,6 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Table,
     TableBody,
@@ -127,53 +127,57 @@ export default function RpciReport(props: Props) {
                         >
                             <div className="grid gap-2">
                                 <Label htmlFor="filter_year">Year</Label>
-                                <NativeSelect
+                                <FormSelect
                                     id="filter_year"
                                     value={year}
-                                    onChange={(e) => setYear(e.target.value)}
-                                >
-                                    {years.map((y) => (
-                                        <option key={y} value={y}>
-                                            {y}
-                                        </option>
-                                    ))}
-                                </NativeSelect>
+                                    onValueChange={(value) => setYear(value)}
+                                    options={years.map((y) => ({
+                                        value: y,
+                                        label: String(y),
+                                    }))}
+                                />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="filter_semester">
                                     Semester
                                 </Label>
-                                <NativeSelect
+                                <FormSelect
                                     id="filter_semester"
                                     value={semester}
-                                    onChange={(e) =>
-                                        setSemester(e.target.value)
+                                    onValueChange={(value) =>
+                                        setSemester(value)
                                     }
-                                >
-                                    <option value="1">
-                                        1st semester (Jan – Jun)
-                                    </option>
-                                    <option value="2">
-                                        2nd semester (Jul – Dec)
-                                    </option>
-                                </NativeSelect>
+                                    options={[
+                                        {
+                                            value: '1',
+                                            label: '1st semester (Jan – Jun)',
+                                        },
+                                        {
+                                            value: '2',
+                                            label: '2nd semester (Jul – Dec)',
+                                        },
+                                    ]}
+                                />
                             </div>
                             <div className="grid gap-2">
                                 <Label htmlFor="filter_fund_cluster">
                                     Fund cluster
                                 </Label>
-                                <NativeSelect
+                                <FormSelect
                                     id="filter_fund_cluster"
                                     value={cluster}
-                                    onChange={(e) => setCluster(e.target.value)}
-                                >
-                                    <option value="">All fund clusters</option>
-                                    {props.fundClusters.map((fc) => (
-                                        <option key={fc} value={fc}>
-                                            Fund cluster {fc}
-                                        </option>
-                                    ))}
-                                </NativeSelect>
+                                    onValueChange={(value) => setCluster(value)}
+                                    options={[
+                                        {
+                                            value: '',
+                                            label: 'All fund clusters',
+                                        },
+                                        ...props.fundClusters.map((fc) => ({
+                                            value: fc,
+                                            label: `Fund cluster ${fc}`,
+                                        })),
+                                    ]}
+                                />
                             </div>
                             <Button type="submit" variant="secondary">
                                 Apply filters

@@ -5,11 +5,11 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
+import { FormSelect } from '@/components/form-select';
 import { visitWithQuery } from '@/components/search-form';
+import { SearchInput } from '@/components/search-input';
 import { TablePanel } from '@/components/table-panel';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Table,
     TableBody,
@@ -58,27 +58,26 @@ export function SupplyCardList({
                 onSubmit={apply}
                 className="flex flex-col gap-2 sm:flex-row sm:justify-end"
             >
-                <Input
-                    type="search"
+                <SearchInput
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
+                    onValueChange={setSearch}
                     placeholder="Search item name or stock no..."
-                    className="sm:w-72"
                     aria-label="Search supplies"
+                    className="sm:w-72"
                 />
-                <NativeSelect
+                <FormSelect
                     value={fundCluster}
-                    onChange={(e) => setFundCluster(e.target.value)}
+                    onValueChange={(value) => setFundCluster(value)}
                     className="sm:w-48"
                     aria-label="Fund cluster"
-                >
-                    <option value="">All fund clusters</option>
-                    {fundClusters.map((fc) => (
-                        <option key={fc} value={fc}>
-                            Fund cluster {fc}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    options={[
+                        { value: '', label: 'All fund clusters' },
+                        ...fundClusters.map((fc) => ({
+                            value: fc,
+                            label: `Fund cluster ${fc}`,
+                        })),
+                    ]}
+                />
                 <Button type="submit" variant="secondary">
                     Filter
                 </Button>

@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
 import { FormField } from '@/components/form-field';
+import { FormSelect } from '@/components/form-select';
 import Heading from '@/components/heading';
 import { SearchForm } from '@/components/search-form';
 import { ActiveBadge, RoleBadges } from '@/components/status-badges';
@@ -36,7 +37,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Table,
     TableBody,
@@ -168,47 +168,45 @@ export default function UsersIndex({
                             defaultValue={search}
                             placeholder="Search users..."
                         />
-                        <NativeSelect
+                        <FormSelect
                             value={roleFilter}
-                            onChange={(e) => setRoleFilter(e.target.value)}
+                            onValueChange={(value) => setRoleFilter(value)}
                             className="w-40"
                             aria-label="Filter by role"
-                        >
-                            <option value="">All roles</option>
-                            {roles.map((role) => (
-                                <option key={role.id} value={role.id}>
-                                    {role.name}
-                                </option>
-                            ))}
-                        </NativeSelect>
-                        <NativeSelect
+                            options={[
+                                { value: '', label: 'All roles' },
+                                ...roles.map((role) => ({
+                                    value: role.id,
+                                    label: role.name,
+                                })),
+                            ]}
+                        />
+                        <FormSelect
                             value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
+                            onValueChange={(value) => setStatusFilter(value)}
                             className="w-40"
                             aria-label="Filter by status"
-                        >
-                            <option value="">All statuses</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                        </NativeSelect>
-                        <NativeSelect
+                            options={[
+                                { value: '', label: 'All statuses' },
+                                { value: 'active', label: 'Active' },
+                                { value: 'inactive', label: 'Inactive' },
+                            ]}
+                        />
+                        <FormSelect
                             value={departmentFilter}
-                            onChange={(e) =>
-                                setDepartmentFilter(e.target.value)
+                            onValueChange={(value) =>
+                                setDepartmentFilter(value)
                             }
                             className="w-64"
                             aria-label="Filter by department"
-                        >
-                            <option value="">All departments</option>
-                            {departments.map((department) => (
-                                <option
-                                    key={department.id}
-                                    value={department.id}
-                                >
-                                    {department.name}
-                                </option>
-                            ))}
-                        </NativeSelect>
+                            options={[
+                                { value: '', label: 'All departments' },
+                                ...departments.map((department) => ({
+                                    value: department.id,
+                                    label: department.name,
+                                })),
+                            ]}
+                        />
                         {hasFilters && (
                             <Button
                                 variant="ghost"
@@ -519,26 +517,19 @@ function CreateUserDialog({
                         error={form.errors.department_id}
                         required
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="create-department"
                             value={form.data.department_id}
-                            onChange={(e) =>
-                                form.setData('department_id', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('department_id', value)
                             }
                             required
-                        >
-                            <option value="" disabled>
-                                Select department
-                            </option>
-                            {departments.map((department) => (
-                                <option
-                                    key={department.id}
-                                    value={department.id}
-                                >
-                                    {department.name}
-                                </option>
-                            ))}
-                        </NativeSelect>
+                            placeholder="Select department"
+                            options={departments.map((department) => ({
+                                value: department.id,
+                                label: department.name,
+                            }))}
+                        />
                     </FormField>
                     <FormField
                         label="Designation"
@@ -546,26 +537,19 @@ function CreateUserDialog({
                         error={form.errors.designation_id}
                         required
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="create-designation"
                             value={form.data.designation_id}
-                            onChange={(e) =>
-                                form.setData('designation_id', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('designation_id', value)
                             }
                             required
-                        >
-                            <option value="" disabled>
-                                Select designation
-                            </option>
-                            {designations.map((designation) => (
-                                <option
-                                    key={designation.id}
-                                    value={designation.id}
-                                >
-                                    {designation.name}
-                                </option>
-                            ))}
-                        </NativeSelect>
+                            placeholder="Select designation"
+                            options={designations.map((designation) => ({
+                                value: designation.id,
+                                label: designation.name,
+                            }))}
+                        />
                     </FormField>
                     <DialogFooter>
                         <Button
@@ -669,23 +653,19 @@ function EditUserForm({
                 error={form.errors.department_id}
                 required
             >
-                <NativeSelect
+                <FormSelect
                     id="edit-department"
                     value={form.data.department_id}
-                    onChange={(e) =>
-                        form.setData('department_id', e.target.value)
+                    onValueChange={(value) =>
+                        form.setData('department_id', value)
                     }
                     required
-                >
-                    <option value="" disabled>
-                        Select department
-                    </option>
-                    {departments.map((department) => (
-                        <option key={department.id} value={department.id}>
-                            {department.name}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    placeholder="Select department"
+                    options={departments.map((department) => ({
+                        value: department.id,
+                        label: department.name,
+                    }))}
+                />
             </FormField>
             <FormField
                 label="Designation"
@@ -693,23 +673,19 @@ function EditUserForm({
                 error={form.errors.designation_id}
                 required
             >
-                <NativeSelect
+                <FormSelect
                     id="edit-designation"
                     value={form.data.designation_id}
-                    onChange={(e) =>
-                        form.setData('designation_id', e.target.value)
+                    onValueChange={(value) =>
+                        form.setData('designation_id', value)
                     }
                     required
-                >
-                    <option value="" disabled>
-                        Select designation
-                    </option>
-                    {designations.map((designation) => (
-                        <option key={designation.id} value={designation.id}>
-                            {designation.name}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    placeholder="Select designation"
+                    options={designations.map((designation) => ({
+                        value: designation.id,
+                        label: designation.name,
+                    }))}
+                />
             </FormField>
             <div className="flex items-center gap-3 rounded-md border p-3">
                 <Checkbox

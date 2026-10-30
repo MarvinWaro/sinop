@@ -3,6 +3,7 @@ import { ImagePlus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { FormField } from '@/components/form-field';
+import { FormSelect } from '@/components/form-select';
 import { SearchableSelect } from '@/components/searchable-select';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +14,6 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { formatMoney, toNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -429,20 +429,20 @@ export function PropertyForm({ property = null, locations, users }: Props) {
                         htmlFor="fund"
                         error={form.errors.fund}
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="fund"
                             value={form.data.fund}
-                            onChange={(e) =>
-                                form.setData('fund', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('fund', value)
                             }
-                        >
-                            <option value="">Select fund</option>
-                            {fundOptions.map((fund) => (
-                                <option key={fund} value={fund}>
-                                    {fund}
-                                </option>
-                            ))}
-                        </NativeSelect>
+                            options={[
+                                { value: '', label: 'Select fund' },
+                                ...fundOptions.map((fund) => ({
+                                    value: fund,
+                                    label: fund,
+                                })),
+                            ]}
+                        />
                     </FormField>
                     <FormField
                         label="Condition"
@@ -450,23 +450,19 @@ export function PropertyForm({ property = null, locations, users }: Props) {
                         error={form.errors.condition}
                         required
                     >
-                        <NativeSelect
+                        <FormSelect
                             id="condition"
                             value={form.data.condition}
-                            onChange={(e) =>
-                                form.setData('condition', e.target.value)
+                            onValueChange={(value) =>
+                                form.setData('condition', value)
                             }
                             required
-                        >
-                            <option value="" disabled>
-                                Select condition
-                            </option>
-                            {conditionOptions.map((condition) => (
-                                <option key={condition} value={condition}>
-                                    {condition}
-                                </option>
-                            ))}
-                        </NativeSelect>
+                            placeholder="Select condition"
+                            options={conditionOptions.map((condition) => ({
+                                value: condition,
+                                label: condition,
+                            }))}
+                        />
                     </FormField>
                     <FormField
                         label="Location / whereabouts"

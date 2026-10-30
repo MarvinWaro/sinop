@@ -83,13 +83,29 @@ export async function getJson<T>(
     return handle<T>(response);
 }
 
-export async function postJson<T>(url: string, body: unknown): Promise<T> {
+async function sendJson<T>(
+    method: 'POST' | 'PATCH' | 'DELETE',
+    url: string,
+    body?: unknown,
+): Promise<T> {
     const response = await fetch(url, {
-        method: 'POST',
-        headers: buildHeaders(true),
+        method,
+        headers: buildHeaders(body !== undefined),
         credentials: 'same-origin',
-        body: JSON.stringify(body),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
     return handle<T>(response);
+}
+
+export function postJson<T>(url: string, body: unknown = {}): Promise<T> {
+    return sendJson<T>('POST', url, body);
+}
+
+export function patchJson<T>(url: string, body: unknown): Promise<T> {
+    return sendJson<T>('PATCH', url, body);
+}
+
+export function deleteJson<T>(url: string): Promise<T> {
+    return sendJson<T>('DELETE', url);
 }

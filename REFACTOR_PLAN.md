@@ -57,6 +57,18 @@ These apply to every module. If a rule must be broken, write down why in the dec
    in a later release once the data is verified.
 4. Take a database dump before running any migration that touches existing data.
 5. Backfill migrations must be safe to run twice and must log row counts.
+6. **Databases** (from 2026-10-30):
+   - **Live old system:** still in use. Its exports, such as `OneDrive\Documents\cims.sql` (Oct 28), are the only clean source of data.
+   - **`sinop_dev`:** where development and manual testing happen. Build or rebuild it from an export with `php artisan sinop:import-legacy <export.sql> --database=sinop_dev`. Add `--replace` to rebuild, and `--force` because `.env` points at it.
+   - **`cims` (local):** the first import. It holds browser-test rows (RIS 2026-10-001…004), so don't use it any more.
+   - **Automated tests:** in-memory SQLite; they never touch MySQL.
+7. **Go-live cutover:**
+   1. Put the old system in maintenance and export it.
+   2. Run `sinop:import-legacy <export> --database=<live name>`: it imports, runs the migrations and checks row counts.
+   3. Run `sinop:audit-data --json=…` and compare it with the rehearsal report.
+   4. Smoke test as admin, CAO and staff, then switch over.
+   - Rehearse every step on `sinop_dev` with each new export.
+   - Never build the live database with `migrate:fresh` followed by a data import: the role migration would run on an empty users table, and every account would be left without access.
 
 ### Backend
 
@@ -135,6 +147,20 @@ data before any change, and handled inside the module that owns the table.
 | D15 | `users`                             | `role` as free string, `status` boolean, leftover Jetstream `current_team_id`.                                                 | Role enum + policies; drop `current_team_id` once confirmed unused.                                       | 1      |
 | D16 | `properties` FKs                    | `location_id` and `user_id` cascade on delete, so deleting a user or location deletes their properties.                       | Change to restrict (or null + reassign) so property records are never lost.                                | 9      |
 | D17 | Missing indexes                     | Report queries filter by date, fund cluster, supply and department without composite indexes.                                 | Add indexes based on the slow-query list collected per module.                                            | 5, 7, 8 |
+| D18 | Manual RIS = one slip per item      | The old manual entry saved each item as its own `ris_slips` row with the same RIS number. In the Oct 28 export, 147 numbers are shared, e.g. RIS 2025-01-001 is 13 slips of 1 item each. | Group into one slip with many items (keep a mapping); then add the unique index from D11.                  | 6      |
+| D19 | `supply_stocks.total_cost`          | Never lowered when supplies are issued: 186 of 246 rows are wrong (e.g. 0 on hand × ₱33.50 but ₱636.50 total). Inflates the dashboard stock value and the next IAR's average cost. | Keep it right inside one `StockLedger` service, or compute it.                                             | 5      |
+| D20 | Issue lines without fund cluster    | `RisSlipController@issue` doesn't save `fund_cluster`: 1,316 lines. RSMI screen vs PDF and RPCI then disagree.                 | Write it on issue; backfill from the RIS slip.                                                             | 5      |
+| D21 | Stock re-value                      | Adds an "adjustment" line dated on the IAR but carrying today's quantity, so card, ledger, RSMI and RPCI balances can go negative. The IAR line keeps the old cost. | Part of the `StockLedger` work. Before/after reports are signed off.                                       | 5      |
+| D22 | `user_transactions`                 | Never written for manual RIS, so 931 received slips are missing from the staff "Received supplies" page. | Derive "received" from `ris_slips.received_by`, or backfill.                                               | 1      |
+| D23 | Signed RIS forms change             | Signatory names, designations and signatures are looked up live, so editing a person rewrites past forms. `ris_slips.office` is a half-snapshot. | `ris_slip_signatories` snapshot at signing (with D9, D10).                                                 | 6      |
+| D24 | Reused rows / caches                | Adding a location or property overwrites a removed one (its ID, history, QR). Property QR images are cached and keep old names. | Stop the reuse; regenerate the QR on change.                                                               | 2, 9   |
+| D25 | Dropped values                      | `storeManual` sends `cao_name`, `cao_designation`, `created_at`, `updated_at`; none are fillable, so they are silently lost. The RIS "Requested" date shows the typing date, not the RIS date. | Decide what to keep; write it explicitly.                                                                 | 6      |
+
+Baseline from `php artisan sinop:audit-data` on the Oct 28 export:
+- 0 accounts without a role; 0 orphan rows; 0 supplies whose on-hand differs from receipts − issues.
+- 147 shared RIS numbers (D18); 1,316 issue lines without a fund cluster (D20); 186 total-cost rows (D19).
+- 8 RIS numbers whose issued quantity differs from the ledger; 931 manual RIS missing from "Received supplies" (D22).
+- 0 fund/unit/condition spelling variants. The export has no properties, locations or suppliers rows.
 
 ---
 
@@ -156,7 +182,7 @@ catalog to reports, then property, then dashboards (which read from everything).
 | 8  | RPCI (physical count)                    | Physical count report and export                                                        | Not started |
 | 9  | Property (PPE)                           | Property list/create/edit/view, images, QR codes, MR assignment, D4, D16                | Not started |
 | 10 | Dashboards                               | Admin dashboard, assets dashboard, staff dashboard                                      | Not started |
-| 11 | Notifications & real-time                | Counts API, Pusher events, toasts and sounds                                            | Not started |
+| 11 | Notifications & real-time                | Notification center, Berth/Soketi live updates, toasts                                  | Done        |
 | 12 | Hardening & release                      | Performance pass, security review, full test run, deployment notes                      | Not started |
 
 Status values: `Not started` · `In progress` · `In review` · `Done`
@@ -293,6 +319,66 @@ Filled in during each module's audit and work.
   (separation of duties). Assigned to nobody by the migration. Activity log now records each
   person's main role (`User::primaryRoleSlug()`) and shows its name.
 
+**Transactions page (2026-10-30):** document view (default) + item-lines view.
+
+- `SupplyTransactionController@index` only (store untouched): `view=documents|lines`, new filters
+  `search` (reference, item, stock no), `division`, `fund`; both views sort by transaction date.
+  Documents = lines grouped by type + reference number (359 documents from 2,582 lines on `cims`);
+  a document is listed when any line matches and its totals use all its lines; item lines for the
+  page are sent slimmed (`lineData()`). Verified on `cims`: totals and per-document sums match.
+- Page: Documents | Item lines switch, expandable documents (items, units, unit cost, value,
+  balance after, stock-card link), RIS reference links to the slip, "Recorded on" shown apart
+  from the transaction date. Tests: `tests/Feature/SupplyTransactionsPageTest.php`.
+
+**Dropdowns:** every dropdown is now shadcn/Radix.
+
+- Long searchable lists (supplies, users, locations) use `SearchableSelect`, which opens in a modal
+  Popover (`components/ui/popover.tsx`), so it floats above dialogs instead of stretching them.
+- All other selects use `FormSelect` (`components/form-select.tsx`, a shadcn Select with an
+  options/groups list). It replaced the native `NativeSelect`, which was removed (56 selects in 18
+  files). Values stay strings, and an option with value `''` ("All …", "No supplier") is allowed
+  through a sentinel. `required` and `name` still work inside forms. Use one of these two for any
+  new dropdown; no native `<select>`.
+
+**Long item forms (Manual RIS entry, New IAR):** the dialog keeps a fixed header and footer, and
+only the middle scrolls.
+
+- **Shared helper** `hooks/use-line-items.ts`:
+  - Items keep their entry order: the saved and printed order, and the `items.N` error indexes.
+  - Each item carries a client-only `row_key`, which `form.transform` strips, so the request body
+    is unchanged.
+  - Updates use the functional `setData`.
+- **Rows:** newest first, numbered with the entry number (#), and memoized (`ManualItemRow`,
+  `IarItemRow`), so typing re-renders one row only.
+  - A new row scrolls into view and opens its supply list.
+  - Enter in an item field adds the next item instead of submitting.
+- **Toolbar:** the item list header (`components/line-items-toolbar.tsx`) sticks while scrolling.
+- **Footer:**
+  - RIS: Final status (plus decline reason), item and quantity totals, and the buttons.
+  - IAR: item count, Grand total and the buttons.
+- **Closing with changes** (Esc, outside click, ✕, Cancel) asks before discarding.
+
+**Landing and sign-in pages:** Calendly-style ("navy ink on cool marble") on the theme tokens.
+
+- **Files:** `pages/welcome.tsx`; `components/landing/*`, which holds the ambient background,
+  product preview, sections, brand mark and `brandPanel`; `layouts/auth/auth-split-layout.tsx`,
+  now the auth layout for all auth pages. The preview uses sample data only.
+- **Own light/dark switch, dark by default:**
+  - `hooks/use-public-appearance.ts` stores the choice in the `public_appearance` cookie and in
+    localStorage. The cookie is unencrypted.
+  - `HandleAppearance` renders these routes (home, login, register, password.*, two-factor.login)
+    in that mode on first paint. `setAppearanceOverride` in `use-appearance` applies it.
+  - The app's Appearance setting is not changed, and it comes back as soon as you leave these
+    pages. Tests: `tests/Feature/PublicAppearanceTest.php`.
+- **App default:** the app itself is also dark until the user picks a mode (`DEFAULT_APPEARANCE` in
+  `use-appearance`, HandleAppearance's cookie fallback).
+  - A stored `system` only counts once it was chosen (`appearance_chosen`), because older
+    versions wrote `system` automatically.
+  - A chosen light or dark is kept.
+- **Motion** (all `motion-safe`): aurora glows, the shimmering hero headline (`text-shimmer` +
+  `animate-shimmer` in app.css), the floating cards, and a dot-grid spotlight. The spotlight is
+  rAF-batched and writes CSS variables, so it causes no React re-renders.
+
 **Next phase:** backend and table structure, step by step (section 3, D1–D17), starting with
 the foundation items (enums, baseline commit) and Users/roles.
 
@@ -321,7 +407,46 @@ _Not started._
 
 ### 6 · RIS
 
-_Not started._
+_Not started as a module._ One fix landed ahead of it:
+
+**Simultaneous requests (2026-10-30).** Requests are served first come, first served. Before, two submits for the same supply within the same moment could both pass the stock check and over-reserve; the old system had the same gap.
+
+- **The lock:** `RisSlipController::store()` and `storeManual()` lock the requested supplies' `supply_stocks` rows (`lockForUpdate`, in supply order) as the transaction's first query. The stock check then runs inside the same transaction.
+  - A later request for the same supply waits for the earlier one to save, then sees what it took.
+  - Requests for other supplies don't wait.
+- **Unchanged:** the check itself (`ensureStockAvailable()`, moved verbatim from `store()`), its messages, and the RIS-number retry. The transactions are retried up to 3 times on a deadlock.
+- **Verified on MySQL** in a scratch database:
+  - B submitted 0.5 s after A, waited for A's save, and was rejected with "Only 2 units available".
+  - When both fit, both were saved, as RIS …-001 and …-002.
+- **Tests:** `tests/Feature/RisRequestStockTest.php`.
+- **Not covered:** issuing (`issue()`) still has no lock. Two people issuing at the same moment is a separate, rarer case.
+
+**Request dialog review, conflicts and inline e-signature (2026-10-30).**
+
+- **Bug fixed — Continue used to submit at once.**
+  - Cause: the Continue (`type="button"`) and Submit (`type="submit" form=…`) buttons shared one DOM node across the step ternary. React re-rendered before the browser finished the click, which turned the click into a submit.
+  - Fix: the footer groups are keyed (`<Fragment key="items|review">`).
+  - Test browser flows with real mouse events (`Input.dispatchMouseEvent`); `element.click()` hides this bug.
+- **Review step:** entity, division, office, RCC and purpose; the items with icons and a total; then the signature choice. Only **Submit request** sends the request.
+- **Stock conflict:**
+  - On `supplies.N.quantity` errors the dialog maps them to supply ids and shows an amber "Someone requested some of these items first" notice. It refreshes the list, notes "Only N left now (you asked for M)" or "None left" on each affected row, and offers **Update to what's left**.
+  - Server messages are unchanged and are used as the fallback.
+- **Catalog in state:** the dialog's `supplies` and `departments` live in `pages/staff/requests.tsx` state, filled from `onSuccess(page)`. Before, the page reload after a failed submit or an upload dropped the optional props and blanked Division, Office and the items.
+- **E-signature upload:**
+  - `components/signature-upload.tsx` has no `<form>` and uses a `type="button"` save, because it is rendered inside other forms. It is shared by Settings › E-signature and `SignatureChoice`.
+  - With no signature, the choice offers "Upload one now"; once saved, E-signature is selected.
+  - This applies wherever `SignatureChoice` is used: request, approve, issue and receive.
+- **Tests:** `tests/Feature/SignatureUploadTest.php`.
+
+**Purpose is optional (2026-10-30).** It is optional in both Request supplies and the admin Manual RIS entry.
+
+- **Validation:**
+  - `store` uses `nullable|string`.
+  - `storeManual` and `RisSlip::getValidationRules` use `nullable|string|max:1000`.
+  - Both saves read `$validated['purpose'] ?? null`.
+- **Database:** no schema change; `ris_slips.purpose` was already nullable.
+- **Display:** an empty purpose shows "—" on Review, "N/A" on the RIS page, and a blank line on the printout.
+- **Tests:** `tests/Feature/RisPurposeOptionalTest.php`.
 
 ### 7 · RSMI reports & analytics
 
@@ -341,7 +466,62 @@ _Not started._
 
 ### 11 · Notifications & real-time
 
-_Not started._
+**Notification center (2026-10-29).** Ported from PHLGADIS and adapted to SINOP.
+
+- **Storage:** the `notifications` table, one row per recipient (migration `2026_10_31_000000`, new table only).
+  - Each row links to the action's `activity_logs` entry, which supplies the actor and the record's name, so no message text is copied.
+  - Stock alerts also name their `supply_id`.
+  - Kinds (`App\Enums\NotificationKind`): RIS submitted, approved, ready to issue, declined, issued and received; stock low and out; IAR recorded; account requested and activated; property assigned.
+- **Writer:** `App\Services\Notifier` is the only one. It picks recipients by permission (`User::scopeWithPermission`), skips inactive users and the actor, and never throws.
+  - `RisActivity::record` returns its entry.
+  - `ActivityRecorder` is scoped per request and remembers entries per record (`latestFor`), for actions logged by model events.
+- **Live updates:** through Berth's Soketi app, using the Pusher protocol (`SKILL.md`).
+  - `App\Services\LiveUpdates` sends one `InboxUpdated` signal (`ShouldBroadcastNow`, empty payload) after the response, through `defer()`. No queue worker is needed, and a socket failure can't undo a save.
+  - The channel is `App.Models.User.{id}`.
+  - Without the secret in `.env`, the broadcaster falls back to `null` and pages check every minute instead.
+- **Browser:**
+  - `lib/realtime.ts` holds one lazy pusher-js socket per tab (its own chunk).
+  - `hooks/use-inbox.ts` refreshes `inbox` and the sidebar badges in one async partial reload, and shows arrival toasts.
+  - Header bell: `components/notifications/notification-bell.tsx`.
+  - Page: `/notifications`, with All/Unread, search, Type and Module filters, and infinite scroll.
+  - Each notification can be marked read or unread, or deleted. Only its owner can touch it; anyone else gets a 404.
+- **Removed:** the `RequisitionStatusUpdated` / `UserNotificationUpdated` events, the old `cao-notifications` / `admin-notifications` / `user.{id}` channels, the CDN Pusher hook, and the unused `/api/*initial-counts` endpoints.
+- **Retention:** read notices are pruned after 90 days (`model:prune`, daily). Production needs the scheduler.
+- **Tests:** `tests/Feature/Notifications/*`.
+- **Live lists:** pages call `useLiveProps([...])` so their own lists are reloaded together with the bell: My requests, Received, the requester dashboard, and RIS index and show.
+
+**Requester side split into pages (2026-10-29).** Before, the old single staff dashboard took ~1.5 s, ran 264 queries and sent 184 KB on every visit.
+
+- **Pages:**
+  - `staff.dashboard` (also `/user-dashboard` in user mode): personal status tiles, the division's year (requests, items issued per month, most-issued supplies) and the last 8 requested items.
+  - `staff.requests` (`/my-requests`), `staff.received` and `staff.properties`, each its own page in the sidebar.
+  - Old `?received` / `?properties` / `?status` links redirect to the matching page.
+- **Request supply dialog:** its supplies are an `Inertia::optional` prop, loaded when the dialog opens. Pending quantities come from one grouped query instead of one query per stock.
+- **Default-password check:** bcrypt, ~0.4 s, now runs once per password per session.
+- **User mode:** `requester` middleware lets admin-side users in.
+- **Result:** dashboard ~25 ms / 8 queries / 13 KB after the first visit; requests ~85 ms / 4 queries.
+- **Tests:** `tests/Feature/StaffPagesTest.php`.
+
+**Request supplies dialog and SSR hydration (2026-10-30).**
+
+- **Supplies prop:** now `supplies`, one slim row per supply: `{supply_id, name, description, stock_no, unit, category, reorder_point, available}`.
+  - The "largest available stock row" rule moved from the browser into `StaffDashboardController::requestableSupplies()`.
+  - Payload went from ~148 KB to ~39 KB for 228 supplies.
+- **Opening:** hovering or focusing "Request supply" loads the list in the background. A click opens at once when the list is loaded, and refreshes it in the background if it's older than 30 s. The spinner shows only on a cold click. Submitting still re-checks stock on the server.
+- **Rendering:**
+  - Cards are a memoized `SupplyCard` with stable callbacks.
+  - 24 cards render first, then 24 more as the list end nears (IntersectionObserver).
+  - Category chips (All / Office / Cleaning / Maintenance) combine with the search.
+- **Visuals:** `components/staff/supply-visual.tsx`.
+  - Icon tile picked from keywords in the item name, falling back to the category icon, tinted by category.
+  - `StockTag`: green "N available", amber "Low · N left" at or below the reorder point, red "Out of stock".
+- **Hydration (SSR is on):**
+  - The appearance toggle renders both icons and swaps them with CSS on `.dark`.
+  - `lib/format.ts` dates and times are read in Asia/Manila, so the server and browser output match.
+  - The notification `<time>` uses `suppressHydrationWarning`, because relative time depends on "now".
+- **Office auto-fill** (`officeOfDivision` in `lib/ris.ts`), in both Request supplies and the admin Manual RIS entry:
+  - Office is filled from the division: the part after " - " ("Scholarship Division - UniFAST BARMM" → "UniFAST BARMM"), or the whole name when there is no dash.
+  - It stays editable. Typed text is kept when the division changes; a cleared Office follows the division again.
 
 ### 12 · Hardening & release
 

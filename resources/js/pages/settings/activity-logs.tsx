@@ -4,11 +4,11 @@ import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
+import { FormSelect } from '@/components/form-select';
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { formatNumber, initialsOf } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { index as activityLogsIndex } from '@/routes/activity-logs';
@@ -128,56 +128,44 @@ export default function ActivityLogs({
                             />
                         </Filter>
                         <Filter label="Action" htmlFor="activity-action">
-                            <NativeSelect
+                            <FormSelect
                                 id="activity-action"
                                 value={values.action}
-                                onChange={(e) =>
-                                    change('action', e.target.value)
+                                onValueChange={(value) =>
+                                    change('action', value)
                                 }
-                            >
-                                <option value="">All actions</option>
-                                {actions.map((option) => (
-                                    <option
-                                        key={option.value}
-                                        value={option.value}
-                                    >
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </NativeSelect>
+                                options={[
+                                    { value: '', label: 'All actions' },
+                                    ...actions,
+                                ]}
+                            />
                         </Filter>
                         <Filter label="Module" htmlFor="activity-module">
-                            <NativeSelect
+                            <FormSelect
                                 id="activity-module"
                                 value={values.module}
-                                onChange={(e) =>
-                                    change('module', e.target.value)
+                                onValueChange={(value) =>
+                                    change('module', value)
                                 }
-                            >
-                                <option value="">All modules</option>
-                                {modules.map((option) => (
-                                    <option
-                                        key={option.value}
-                                        value={option.value}
-                                    >
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </NativeSelect>
+                                options={[
+                                    { value: '', label: 'All modules' },
+                                    ...modules,
+                                ]}
+                            />
                         </Filter>
                         <Filter label="User" htmlFor="activity-user">
-                            <NativeSelect
+                            <FormSelect
                                 id="activity-user"
                                 value={values.user}
-                                onChange={(e) => change('user', e.target.value)}
-                            >
-                                <option value="">Everyone</option>
-                                {users.map((user) => (
-                                    <option key={user.id} value={user.id}>
-                                        {user.name}
-                                    </option>
-                                ))}
-                            </NativeSelect>
+                                onValueChange={(value) => change('user', value)}
+                                options={[
+                                    { value: '', label: 'Everyone' },
+                                    ...users.map((user) => ({
+                                        value: user.id,
+                                        label: user.name,
+                                    })),
+                                ]}
+                            />
                         </Filter>
                         <Filter label="From" htmlFor="activity-from">
                             <Input

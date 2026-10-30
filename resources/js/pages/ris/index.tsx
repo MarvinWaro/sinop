@@ -23,6 +23,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { useCan } from '@/hooks/use-can';
+import { useLiveProps } from '@/hooks/use-inbox';
 import { formatDate, formatTime } from '@/lib/format';
 import { risKey } from '@/lib/ris';
 import { index as risIndex, show as showRis } from '@/routes/ris';
@@ -63,6 +64,9 @@ export default function RisIndex({
     const can = useCan();
     const canManualEntry = can('ris.manual-entry');
     const [manualOpen, setManualOpen] = useState(false);
+
+    // New requests and status changes show here without a refresh.
+    useLiveProps(['risSlips', 'counts']);
 
     const statuses: { value: string; label: string; count: number }[] = [
         { value: '', label: 'Total', count: counts.total },

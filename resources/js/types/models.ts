@@ -145,6 +145,51 @@ export type SupplyTransaction = {
     updated_at: string;
 };
 
+/** One item line as the Transactions page shows it (full rows fit too). */
+export type TransactionLine = Pick<
+    SupplyTransaction,
+    | 'transaction_id'
+    | 'supply_id'
+    | 'transaction_type'
+    | 'transaction_date'
+    | 'reference_no'
+    | 'quantity'
+    | 'unit_cost'
+    | 'total_cost'
+    | 'balance_quantity'
+    | 'fund_cluster'
+    | 'remarks'
+    | 'created_at'
+> & {
+    supply?: Pick<
+        Supply,
+        'supply_id' | 'stock_no' | 'item_name' | 'unit_of_measurement'
+    > | null;
+    department?: Pick<Department, 'id' | 'name'> | null;
+    user?: Pick<AppUser, 'id' | 'name'> | null;
+};
+
+/** An IAR or RIS: the item lines sharing a type and reference number. */
+export type SupplyTransactionDocument = {
+    key: string;
+    transaction_type: TransactionType;
+    reference_no: string | null;
+    date_from: string;
+    date_to: string;
+    line_count: number;
+    item_count: number;
+    /** Sum of the recorded line costs. */
+    total_value: number;
+    recorded_at: string | null;
+    multiple_divisions: boolean;
+    division: string | null;
+    fund_cluster: string | null;
+    recorded_by: string | null;
+    /** Route key of the RIS slip, for issue documents. */
+    ris_key: string | null;
+    lines: TransactionLine[];
+};
+
 export type RisStatus = 'draft' | 'approved' | 'posted' | 'declined';
 export type SignatureType = 'esign' | 'sgd';
 

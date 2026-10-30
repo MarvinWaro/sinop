@@ -1,41 +1,39 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Models\RisSlip;
-use App\Models\RisItem;
-use App\Models\Supply;
-use App\Models\Department;
-use App\Models\SupplyStock;
-use App\Models\SupplyTransaction;
-use App\Models\User; // <-- ADD THIS IMPORT
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log; // <-- ADD THIS IMPORT
-use App\Services\ReferenceNumberService;
-use App\Events\RequisitionStatusUpdated;
-use App\Events\UserNotificationUpdated;
 use App\Constants\RisStatus;
 use App\Enums\ActivityAction;
+use App\Models\Department;
+use App\Models\RisItem;
+use App\Models\RisSlip;
+use App\Models\Supply;
+use App\Models\SupplyStock; // <-- ADD THIS IMPORT
+use App\Models\SupplyTransaction;
+use App\Models\User;
+use App\Services\Notifier;
+use App\Services\ReferenceNumberService; // <-- ADD THIS IMPORT
 use App\Support\RisActivity;
 use App\Support\RisSignatory;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
-
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 use PhpOffice\PhpSpreadsheet\Worksheet\Drawing;
+use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class RisSlipController extends Controller
 {
-
     /**
      * Display a listing of the resource with manual entry support.
      */
@@ -79,17 +77,17 @@ class RisSlipController extends Controller
         // Apply search filter
         if ($request->filled('search')) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('ris_no', 'like', "%{$search}%")
-                ->orWhere('purpose', 'like', "%{$search}%")
-                ->orWhere('entity_name', 'like', "%{$search}%")
-                ->orWhere('office', 'like', "%{$search}%")
-                ->orWhereHas('requester', function($subQuery) use ($search) {
-                    $subQuery->where('name', 'like', "%{$search}%");
-                })
-                ->orWhereHas('department', function($subQuery) use ($search) {
-                    $subQuery->where('name', 'like', "%{$search}%");
-                });
+                    ->orWhere('purpose', 'like', "%{$search}%")
+                    ->orWhere('entity_name', 'like', "%{$search}%")
+                    ->orWhere('office', 'like', "%{$search}%")
+                    ->orWhereHas('requester', function ($subQuery) use ($search) {
+                        $subQuery->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('department', function ($subQuery) use ($search) {
+                        $subQuery->where('name', 'like', "%{$search}%");
+                    });
             });
         }
 
@@ -132,6 +130,7 @@ class RisSlipController extends Controller
                 ->map(function ($user) {
                     // Add department name for better display
                     $user->department_name = $user->department ? $user->department->name : 'No Department';
+
                     return $user;
                 });
 
@@ -178,7 +177,7 @@ class RisSlipController extends Controller
                             'quantity_on_hand' => $quantity_on_hand,
                             'actual_available' => $actualAvailable,
                             'pending_requested' => $pendingRequested,
-                            'display_name' => $supply->item_name . ' (' . $supply->stock_no . ')',
+                            'display_name' => $supply->item_name.' ('.$supply->stock_no.')',
                             'full_description' => $supply->description,
                             'unit' => $supply->unit_of_measurement,
                             'has_stock' => $stock !== null,
@@ -186,7 +185,7 @@ class RisSlipController extends Controller
                             'stock_no' => $supply->stock_no,
                             'item_name' => $supply->item_name,
                             'description' => $supply->description,
-                            'unit_of_measurement' => $supply->unit_of_measurement
+                            'unit_of_measurement' => $supply->unit_of_measurement,
                         ];
                     });
 
@@ -209,7 +208,7 @@ class RisSlipController extends Controller
                             $stock->pending_requested = $pendingRequested;
 
                             // Add supply details for easier access in frontend
-                            $stock->display_name = $stock->supply->item_name . ' (' . $stock->supply->stock_no . ')';
+                            $stock->display_name = $stock->supply->item_name.' ('.$stock->supply->stock_no.')';
                             $stock->full_description = $stock->supply->description;
                             $stock->unit = $stock->supply->unit_of_measurement;
                             $stock->has_stock = true;
@@ -261,18 +260,117 @@ class RisSlipController extends Controller
             'office' => 'nullable|string',
             'fund_cluster' => 'nullable|string',
             'responsibility_center_code' => 'nullable|string',
-            'purpose' => 'required|string',
+            'purpose' => 'nullable|string',
             'supplies' => 'required|array',
             'supplies.*.supply_id' => 'required|exists:supplies,supply_id',
             'supplies.*.quantity' => 'required|integer|min:1',
             'signature_type' => 'required|in:esign,sgd',
         ]);
 
-        // NEW: Check stock availability before processing
-        $stockValidationErrors = [];
-        $currentAvailability = [];
+        $maxAttempts = 5;
+        $attempt = 0;
 
-        foreach ($validated['supplies'] as $index => $item) {
+        do {
+            $attempt++;
+            // Generate a new RIS number each attempt
+            $newRisNumber = $referenceNumberService->generateRisNumber();
+
+            try {
+                // Begin transaction (retried up to 3 times if two requests
+                // deadlock on the stock lock)
+                return DB::transaction(function () use ($validated, $newRisNumber) {
+                    // First come, first served: a request for the same supply
+                    // waits here until the earlier one is saved, so the stock
+                    // check sees what that request took.
+                    $this->lockStockOf(collect($validated['supplies'])->pluck('supply_id'));
+                    $this->ensureStockAvailable($validated['supplies']);
+
+                    // Check again to avoid any duplicate number
+                    if (RisSlip::where('ris_no', $newRisNumber)->exists()) {
+                        throw new \Exception('RIS number already exists, retrying...');
+                    }
+
+                    // Create RIS Slip
+                    $risSlip = RisSlip::create([
+                        'ris_no' => $newRisNumber,
+                        'ris_date' => now(),
+                        'entity_name' => $validated['entity_name'],
+                        'division' => $validated['division'],
+                        'office' => $validated['office'],
+                        'fund_cluster' => $validated['fund_cluster'],
+                        'responsibility_center_code' => $validated['responsibility_center_code'],
+                        'requested_by' => Auth::id(),
+                        'requester_signature_type' => $validated['signature_type'],
+                        'purpose' => $validated['purpose'] ?? null,
+                        'status' => 'draft',
+                    ]);
+
+                    // Create RIS Items
+                    foreach ($validated['supplies'] as $item) {
+                        $stockAvailable = SupplyStock::where('supply_id', $item['supply_id'])
+                            ->where('status', 'available')
+                            ->sum('quantity_on_hand') >= $item['quantity'];
+
+                        RisItem::create([
+                            'ris_id' => $risSlip->ris_id,
+                            'supply_id' => $item['supply_id'],
+                            'quantity_requested' => $item['quantity'],
+                            'stock_available' => $stockAvailable,
+                        ]);
+                    }
+
+                    $entry = RisActivity::record(ActivityAction::Requested, $risSlip);
+
+                    // Tell whoever approves (live signal goes out after the response).
+                    app(Notifier::class)->risSubmitted($entry);
+
+                    return back()->with('success', 'Requisition created successfully with RIS# '.$newRisNumber);
+                }, 3);
+            } catch (\Exception $e) {
+                // Retry only for RIS number conflict
+                if ($attempt >= $maxAttempts || strpos($e->getMessage(), 'retrying') === false) {
+                    throw $e;
+                }
+                usleep(150000); // 0.15s sleep before retry
+            }
+        } while ($attempt < $maxAttempts);
+
+        return back()->with('error', 'Failed to generate unique RIS number after several attempts.');
+    }
+
+    /**
+     * Locks the stock rows of these supplies until the surrounding
+     * transaction ends, so requests for the same supply are checked and
+     * saved one after another instead of at the same moment.
+     *
+     * Call it as the transaction's first query: MySQL reads after it then
+     * see what the earlier request saved. Rows are locked in supply order,
+     * so two requests can't hold each other's rows.
+     *
+     * @param  iterable<int|string>  $supplyIds
+     */
+    private function lockStockOf(iterable $supplyIds): void
+    {
+        SupplyStock::query()
+            ->whereIn('supply_id', collect($supplyIds)->map(fn ($id) => (int) $id)->unique()->sort()->values())
+            ->orderBy('supply_id')
+            ->orderBy('stock_id')
+            ->lockForUpdate()
+            ->pluck('stock_id');
+    }
+
+    /**
+     * The requester's stock check: what's on hand minus what Pending and
+     * Approved requests already hold. Throws the "Stock availability has
+     * changed" errors when an item asks for more.
+     *
+     * @param  array<int, array{supply_id: int|string, quantity: int|string}>  $supplies
+     */
+    private function ensureStockAvailable(array $supplies): void
+    {
+        $stockValidationErrors = [];
+
+        foreach ($supplies as $index => $item) {
             $supplyId = $item['supply_id'];
             $requestedQty = $item['quantity'];
 
@@ -282,23 +380,23 @@ class RisSlipController extends Controller
                 ->where('quantity_on_hand', '>', 0)
                 ->first();
 
-            if (!$stock) {
+            if (! $stock) {
                 $stockValidationErrors[] = [
                     'supply_id' => $supplyId,
                     'message' => 'Item is no longer available',
-                    'available' => 0
+                    'available' => 0,
                 ];
+
                 continue;
             }
 
             $pendingRequested = RisItem::where('supply_id', $supplyId)
-                ->whereHas('risSlip', function($q) {
-                    $q->whereIn('status', ['draft','approved']);
+                ->whereHas('risSlip', function ($q) {
+                    $q->whereIn('status', ['draft', 'approved']);
                 })
                 ->sum('quantity_requested');
 
             $currentAvailable = max(0, $stock->quantity_on_hand - $pendingRequested);
-            $currentAvailability[$supplyId] = $currentAvailable;
 
             if ($requestedQty > $currentAvailable) {
                 $supply = Supply::find($supplyId);
@@ -307,18 +405,18 @@ class RisSlipController extends Controller
                     'supply_name' => $supply ? $supply->item_name : 'Unknown Item',
                     'requested' => $requestedQty,
                     'available' => $currentAvailable,
-                    'message' => "Only {$currentAvailable} units available (requested: {$requestedQty})"
+                    'message' => "Only {$currentAvailable} units available (requested: {$requestedQty})",
                 ];
             }
         }
 
         // If there are stock validation errors, send them back as validation errors
-        if (!empty($stockValidationErrors)) {
+        if (! empty($stockValidationErrors)) {
             $messages = [
                 'supplies' => 'Stock availability has changed. Please review and update your request.',
             ];
 
-            foreach ($validated['supplies'] as $index => $item) {
+            foreach ($supplies as $index => $item) {
                 foreach ($stockValidationErrors as $error) {
                     if ((string) $error['supply_id'] === (string) $item['supply_id']) {
                         $messages["supplies.{$index}.quantity"] = isset($error['supply_name'])
@@ -330,69 +428,6 @@ class RisSlipController extends Controller
 
             throw ValidationException::withMessages($messages);
         }
-
-        $maxAttempts = 5;
-        $attempt = 0;
-
-        do {
-            $attempt++;
-            // Generate a new RIS number each attempt
-            $newRisNumber = $referenceNumberService->generateRisNumber();
-
-            try {
-                // Begin transaction
-                return DB::transaction(function() use ($validated, $newRisNumber) {
-                    // Check again to avoid any duplicate number
-                    if (\App\Models\RisSlip::where('ris_no', $newRisNumber)->exists()) {
-                        throw new \Exception("RIS number already exists, retrying...");
-                    }
-
-                    // Create RIS Slip
-                    $risSlip = \App\Models\RisSlip::create([
-                        'ris_no' => $newRisNumber,
-                        'ris_date' => now(),
-                        'entity_name' => $validated['entity_name'],
-                        'division' => $validated['division'],
-                        'office' => $validated['office'],
-                        'fund_cluster' => $validated['fund_cluster'],
-                        'responsibility_center_code' => $validated['responsibility_center_code'],
-                        'requested_by' => Auth::id(),
-                        'requester_signature_type' => $validated['signature_type'],
-                        'purpose' => $validated['purpose'],
-                        'status' => 'draft',
-                    ]);
-
-                    // Create RIS Items
-                    foreach ($validated['supplies'] as $item) {
-                        $stockAvailable = \App\Models\SupplyStock::where('supply_id', $item['supply_id'])
-                            ->where('status', 'available')
-                            ->sum('quantity_on_hand') >= $item['quantity'];
-
-                        \App\Models\RisItem::create([
-                            'ris_id' => $risSlip->ris_id,
-                            'supply_id' => $item['supply_id'],
-                            'quantity_requested' => $item['quantity'],
-                            'stock_available' => $stockAvailable,
-                        ]);
-                    }
-
-                    RisActivity::record(ActivityAction::Requested, $risSlip);
-
-                    // Broadcast the event for new requisition
-                    broadcast(new RequisitionStatusUpdated($risSlip, 'created'));
-
-                    return back()->with('success', 'Requisition created successfully with RIS# ' . $newRisNumber);
-                });
-            } catch (\Exception $e) {
-                // Retry only for RIS number conflict
-                if ($attempt >= $maxAttempts || strpos($e->getMessage(), 'retrying') === false) {
-                    throw $e;
-                }
-                usleep(150000); // 0.15s sleep before retry
-            }
-        } while ($attempt < $maxAttempts);
-
-        return back()->with('error', 'Failed to generate unique RIS number after several attempts.');
     }
 
     public function validateStock(Request $request)
@@ -416,19 +451,20 @@ class RisSlipController extends Controller
                 ->where('quantity_on_hand', '>', 0)
                 ->first();
 
-            if (!$stock) {
+            if (! $stock) {
                 $stockValidationErrors[] = [
                     'supply_id' => $supplyId,
                     'message' => 'Item is no longer available',
-                    'available' => 0
+                    'available' => 0,
                 ];
                 $currentAvailability[$supplyId] = 0;
+
                 continue;
             }
 
             $pendingRequested = RisItem::where('supply_id', $supplyId)
-                ->whereHas('risSlip', function($q) {
-                    $q->whereIn('status', ['draft','approved']);
+                ->whereHas('risSlip', function ($q) {
+                    $q->whereIn('status', ['draft', 'approved']);
                 })
                 ->sum('quantity_requested');
 
@@ -442,7 +478,7 @@ class RisSlipController extends Controller
                     'supply_name' => $supply ? $supply->item_name : 'Unknown Item',
                     'requested' => $requestedQty,
                     'available' => $currentAvailable,
-                    'message' => "Only {$currentAvailable} units available (requested: {$requestedQty})"
+                    'message' => "Only {$currentAvailable} units available (requested: {$requestedQty})",
                 ];
             }
         }
@@ -450,7 +486,7 @@ class RisSlipController extends Controller
         return response()->json([
             'success' => empty($stockValidationErrors),
             'errors' => $stockValidationErrors,
-            'current_availability' => $currentAvailability
+            'current_availability' => $currentAvailability,
         ]);
     }
 
@@ -538,18 +574,10 @@ class RisSlipController extends Controller
             'fund_cluster' => $validated['fund_cluster'] ?? $risSlip->fund_cluster,
         ]);
 
-        RisActivity::record(ActivityAction::Approved, $risSlip);
+        $entry = RisActivity::record(ActivityAction::Approved, $risSlip);
 
-        // Broadcast events
-        broadcast(new RequisitionStatusUpdated($risSlip, 'approved'));
-
-        if ($risSlip->requested_by) {
-            broadcast(new UserNotificationUpdated(
-                $risSlip->requested_by,
-                'requisition_approved',
-                ['ris_no' => $risSlip->ris_no, 'ris_id' => $risSlip->ris_id]
-            ));
-        }
+        // Tell the requester, and whoever issues supplies.
+        app(Notifier::class)->risApproved($risSlip, $entry);
 
         return back()->with('success', 'RIS approved successfully.');
     }
@@ -560,7 +588,7 @@ class RisSlipController extends Controller
     public function decline(Request $request, RisSlip $risSlip)
     {
         // Validate that the RIS can be declined
-        if (!$risSlip->canBeDeclined()) {
+        if (! $risSlip->canBeDeclined()) {
             return back()->with('error', 'This RIS cannot be declined. Only draft requisitions can be declined.');
         }
 
@@ -586,32 +614,17 @@ class RisSlipController extends Controller
 
             DB::commit();
 
-            RisActivity::record(ActivityAction::Declined, $risSlip, summary: 'Reason: '.trim($validated['decline_reason']), properties: ['reason' => trim($validated['decline_reason'])]);
+            $entry = RisActivity::record(ActivityAction::Declined, $risSlip, summary: 'Reason: '.trim($validated['decline_reason']), properties: ['reason' => trim($validated['decline_reason'])]);
 
-            // Broadcast events for real-time updates
-            broadcast(new RequisitionStatusUpdated($risSlip, 'declined'));
-
-            // Notify the requester about the decline
-            if ($risSlip->requested_by) {
-                broadcast(new UserNotificationUpdated(
-                    $risSlip->requested_by,
-                    'requisition_declined',
-                    [
-                        'ris_no' => $risSlip->ris_no,
-                        'reason' => $validated['decline_reason'],
-                        'ris_id' => $risSlip->ris_id,
-                        'declined_by' => Auth::user()->name,
-                        'declined_at' => now()->format('M d, Y h:i A')
-                    ]
-                ));
-            }
+            // Tell the requester.
+            app(Notifier::class)->risDeclined($risSlip, $entry);
 
             \Log::info('RIS declined successfully', [
                 'ris_id' => $risSlip->ris_id,
                 'ris_no' => $risSlip->ris_no,
                 'declined_by' => Auth::id(),
                 'declined_by_name' => Auth::user()->name,
-                'reason' => $validated['decline_reason']
+                'reason' => $validated['decline_reason'],
             ]);
 
             return back()->with('success', "RIS #{$risSlip->ris_no} has been declined successfully. The requester has been notified with your reason.");
@@ -624,7 +637,7 @@ class RisSlipController extends Controller
                 'ris_no' => $risSlip->ris_no,
                 'declined_by' => Auth::id(),
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return back()->with('error', 'An error occurred while declining the RIS. Please try again or contact support.');
@@ -647,7 +660,7 @@ class RisSlipController extends Controller
             'signature_type' => 'required|in:esign,sgd',
         ]);
 
-        return DB::transaction(function() use ($validated, $risSlip, $request) {
+        return DB::transaction(function () use ($validated, $risSlip, $request) {
             $hasIssuedItems = false;
             $validationErrors = [];
 
@@ -672,18 +685,21 @@ class RisSlipController extends Controller
                     // Stock is available - minimum must be 1
                     if ($issueQty < 1) {
                         $validationErrors[] = "Item '{$risItem->supply->item_name}' has {$totalAvailable} units available. Minimum issue quantity is 1. Cannot issue 0 for approved items with available stock.";
+
                         continue;
                     }
 
                     $maxAllowedQty = min($totalAvailable, $requestedQty);
                     if ($issueQty > $maxAllowedQty) {
                         $validationErrors[] = "Item '{$risItem->supply->item_name}' - Maximum issue quantity is {$maxAllowedQty} (Available: {$totalAvailable}, Requested: {$requestedQty}).";
+
                         continue;
                     }
                 } else {
                     // No stock available - only 0 is allowed
                     if ($issueQty > 0) {
                         $validationErrors[] = "Item '{$risItem->supply->item_name}' has no stock available. Cannot issue {$issueQty} units.";
+
                         continue;
                     }
                 }
@@ -694,14 +710,14 @@ class RisSlipController extends Controller
             }
 
             // Return validation errors if any
-            if (!empty($validationErrors)) {
+            if (! empty($validationErrors)) {
                 return back()->withErrors(['issue_validation' => implode(' ', $validationErrors)])
-                           ->with('error', 'Please correct the issue quantities before proceeding.')
-                           ->withInput();
+                    ->with('error', 'Please correct the issue quantities before proceeding.')
+                    ->withInput();
             }
 
             // Business rule: At least one item must be issued
-            if (!$hasIssuedItems) {
+            if (! $hasIssuedItems) {
                 return back()->with('error', 'You must issue at least one item. Cannot process issuance with all quantities set to zero.');
             }
 
@@ -736,7 +752,9 @@ class RisSlipController extends Controller
                     $totalCost = 0;
 
                     foreach ($matchingStocks as $stock) {
-                        if ($remainingQuantity <= 0) break;
+                        if ($remainingQuantity <= 0) {
+                            break;
+                        }
 
                         $qtyToDeduct = min($remainingQuantity, $stock->quantity_on_hand);
 
@@ -764,7 +782,7 @@ class RisSlipController extends Controller
                             'unit_cost' => $stock->unit_cost,
                             'total_cost' => $stockItemCost,
                             'department_id' => $risSlip->division,
-                            'remarks' => "Issued via RIS #{$risSlip->ris_no}" . ($itemData['remarks'] ? " - {$itemData['remarks']}" : ""),
+                            'remarks' => "Issued via RIS #{$risSlip->ris_no}".($itemData['remarks'] ? " - {$itemData['remarks']}" : ''),
                             'balance_quantity' => $newBalance,
                             'user_id' => Auth::id(),
                             'created_at' => now(),
@@ -798,22 +816,22 @@ class RisSlipController extends Controller
 
                     // Log if there was insufficient stock to fulfill the complete request
                     if ($remainingQuantity > 0) {
-                        \Log::warning("Insufficient stock for complete fulfillment", [
+                        \Log::warning('Insufficient stock for complete fulfillment', [
                             'ris_no' => $risSlip->ris_no,
                             'supply_id' => $risItem->supply_id,
                             'item_name' => $risItem->supply->item_name,
                             'requested' => $issueQty,
                             'fulfilled' => $issueQty - $remainingQuantity,
-                            'shortfall' => $remainingQuantity
+                            'shortfall' => $remainingQuantity,
                         ]);
                     }
                 } else {
                     // Log items that couldn't be issued (for audit trail)
-                    \Log::info("Item not issued due to insufficient stock", [
+                    \Log::info('Item not issued due to insufficient stock', [
                         'ris_no' => $risSlip->ris_no,
                         'supply_id' => $risItem->supply_id,
                         'item_name' => $risItem->supply->item_name,
-                        'reason' => 'No stock available'
+                        'reason' => 'No stock available',
                     ]);
                 }
             }
@@ -827,18 +845,16 @@ class RisSlipController extends Controller
                 'received_by' => $request->received_by,
             ]);
 
-            RisActivity::record(ActivityAction::Issued, $risSlip, properties: ['received_by' => User::find($request->received_by)?->name], withStock: true);
+            $entry = RisActivity::record(ActivityAction::Issued, $risSlip, properties: ['received_by' => User::find($request->received_by)?->name], withStock: true);
 
-            // Broadcast events
-            broadcast(new RequisitionStatusUpdated($risSlip, 'issued'));
-
-            if ($request->received_by) {
-                broadcast(new UserNotificationUpdated(
-                    $request->received_by,
-                    'supplies_ready',
-                    ['ris_no' => $risSlip->ris_no, 'ris_id' => $risSlip->ris_id]
-                ));
-            }
+            // Tell the receiver and the requester, and warn supply staff
+            // about anything this issue left low or out of stock.
+            $notifier = app(Notifier::class);
+            $notifier->risIssued($risSlip, $entry);
+            $notifier->stockLevels(
+                RisItem::where('ris_id', $risSlip->ris_id)->where('quantity_issued', '>', 0)->pluck('supply_id'),
+                $entry,
+            );
 
             // Enhanced success logging
             $issuedItemsCount = collect($validated['items'])->where('quantity_issued', '>', 0)->count();
@@ -852,11 +868,11 @@ class RisSlipController extends Controller
                 'received_by' => $request->received_by,
                 'total_items' => $totalItemsCount,
                 'issued_items' => $issuedItemsCount,
-                'signature_type' => $validated['signature_type']
+                'signature_type' => $validated['signature_type'],
             ]);
 
             return redirect()->route('ris.show', $risSlip)
-                            ->with('success', "Supplies issued successfully! {$issuedItemsCount} out of {$totalItemsCount} items processed.");
+                ->with('success', "Supplies issued successfully! {$issuedItemsCount} out of {$totalItemsCount} items processed.");
         });
     }
 
@@ -869,7 +885,7 @@ class RisSlipController extends Controller
 
         // Normalize types (some hosts return IDs as strings)
         $currentUserId = (int) auth()->id();
-        $receiverId    = (int) $risSlip->received_by;
+        $receiverId = (int) $risSlip->received_by;
 
         // Check if the current user is the one assigned to receive
         if ($receiverId !== $currentUserId) {
@@ -877,7 +893,7 @@ class RisSlipController extends Controller
         }
 
         // Check if already received
-        if (!is_null($risSlip->received_at)) {
+        if (! is_null($risSlip->received_at)) {
             return back()->with('error', 'This RIS has already been received.');
         }
 
@@ -892,18 +908,10 @@ class RisSlipController extends Controller
             'receiver_signature_type' => $validated['signature_type'],
         ]);
 
-        RisActivity::record(ActivityAction::Received, $risSlip);
+        $entry = RisActivity::record(ActivityAction::Received, $risSlip);
 
-        // Broadcast completion event
-        broadcast(new RequisitionStatusUpdated($risSlip->fresh(), 'completed'));
-
-        if ($receiverId) {
-            broadcast(new UserNotificationUpdated(
-                $receiverId,
-                'supplies_received',
-                ['ris_no' => $risSlip->ris_no]
-            ));
-        }
+        // Tell whoever issues and approves requisitions.
+        app(Notifier::class)->risReceived($entry);
 
         return back()->with('success', 'Supplies received successfully.');
     }
@@ -914,6 +922,7 @@ class RisSlipController extends Controller
     public function print(RisSlip $risSlip)
     {
         $risSlip->load(['department', 'requester', 'approver', 'issuer', 'receiver', 'decliner', 'items.supply']);
+
         return view('ris.print', compact('risSlip'));
     }
 
@@ -923,7 +932,7 @@ class RisSlipController extends Controller
     public function exportExcel(RisSlip $risSlip)
     {
         // Create Excel file
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         // Set page setup
@@ -946,14 +955,14 @@ class RisSlipController extends Controller
 
         // Entity Information Section (NO BORDERS - just underlines like the template)
         // First row - Entity Name and Fund Cluster
-        $sheet->setCellValue("A{$currentRow}", "Entity Name:");
+        $sheet->setCellValue("A{$currentRow}", 'Entity Name:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:F{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $risSlip->entity_name);
         // Add underline only (no full borders)
         $sheet->getStyle("B{$currentRow}:F{$currentRow}")->getBorders()->getBottom()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("G{$currentRow}", "Fund Cluster:");
+        $sheet->setCellValue("G{$currentRow}", 'Fund Cluster:');
         $sheet->getStyle("G{$currentRow}")->getFont()->setBold(true);
         $sheet->setCellValue("H{$currentRow}", $risSlip->fund_cluster);
         // Add underline only (no full borders)
@@ -962,13 +971,13 @@ class RisSlipController extends Controller
         $currentRow++;
 
         // Second row - Division and Responsibility Center Code (with borders)
-        $sheet->setCellValue("A{$currentRow}", "Division:");
+        $sheet->setCellValue("A{$currentRow}", 'Division:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:D{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $risSlip->department->name ?? 'N/A');
         $sheet->getStyle("A{$currentRow}:D{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("E{$currentRow}", "Responsibility Center Code:");
+        $sheet->setCellValue("E{$currentRow}", 'Responsibility Center Code:');
         $sheet->getStyle("E{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("F{$currentRow}:H{$currentRow}");
         $sheet->setCellValue("F{$currentRow}", $risSlip->responsibility_center_code ?? '');
@@ -977,28 +986,28 @@ class RisSlipController extends Controller
         $currentRow++;
 
         // Third row - Office and RIS No. (with borders)
-        $sheet->setCellValue("A{$currentRow}", "Office:");
+        $sheet->setCellValue("A{$currentRow}", 'Office:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:D{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $risSlip->office ?? '');
         $sheet->getStyle("A{$currentRow}:D{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("E{$currentRow}", "RIS No.:");
+        $sheet->setCellValue("E{$currentRow}", 'RIS No.:');
         $sheet->getStyle("E{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("F{$currentRow}:H{$currentRow}");
         $sheet->setCellValue("F{$currentRow}", $risSlip->ris_no);
         $sheet->getStyle("E{$currentRow}:H{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $currentRow ++; // Add space
+        $currentRow++; // Add space
 
         // Main items table headers
         // First header row with merged sections
         $sheet->mergeCells("A{$currentRow}:D{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "Requisition");
+        $sheet->setCellValue("A{$currentRow}", 'Requisition');
         $sheet->mergeCells("E{$currentRow}:F{$currentRow}");
-        $sheet->setCellValue("E{$currentRow}", "Stock Available?");
+        $sheet->setCellValue("E{$currentRow}", 'Stock Available?');
         $sheet->mergeCells("G{$currentRow}:H{$currentRow}");
-        $sheet->setCellValue("G{$currentRow}", "Issue");
+        $sheet->setCellValue("G{$currentRow}", 'Issue');
 
         // Style first header row
         $headerRange = "A{$currentRow}:H{$currentRow}";
@@ -1006,29 +1015,29 @@ class RisSlipController extends Controller
             'font' => ['bold' => true, 'size' => 12],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER
+                'vertical' => Alignment::VERTICAL_CENTER,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F2F2F2']
+                'color' => ['rgb' => 'F2F2F2'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $currentRow++;
 
         // Second header row with detailed columns
         $subHeaders = [
-            'A' => "Stock No.",
-            'B' => "Unit",
-            'C' => "Description",
-            'D' => "Quantity",
-            'E' => "Yes",
-            'F' => "No",
-            'G' => "Quantity",
-            'H' => "Remarks"
+            'A' => 'Stock No.',
+            'B' => 'Unit',
+            'C' => 'Description',
+            'D' => 'Quantity',
+            'E' => 'Yes',
+            'F' => 'No',
+            'G' => 'Quantity',
+            'H' => 'Remarks',
         ];
 
         foreach ($subHeaders as $col => $header) {
@@ -1041,15 +1050,15 @@ class RisSlipController extends Controller
             'font' => ['bold' => true, 'size' => 10],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER
+                'vertical' => Alignment::VERTICAL_CENTER,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F2F2F2']
+                'color' => ['rgb' => 'F2F2F2'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $sheet->getRowDimension($currentRow - 1)->setRowHeight(25);
@@ -1065,7 +1074,7 @@ class RisSlipController extends Controller
             // Description (combine item name and description)
             $parts = [
                 $item->supply->item_name,
-                $item->supply->description
+                $item->supply->description,
             ];
             $display = collect($parts)->filter()->join(', ');
             $sheet->setCellValue("C{$currentRow}", $display ?: 'N/A');
@@ -1074,7 +1083,7 @@ class RisSlipController extends Controller
 
             // Stock Available columns (Yes/No)
             $sheet->setCellValue("E{$currentRow}", $item->stock_available ? '✓' : '');
-            $sheet->setCellValue("F{$currentRow}", !$item->stock_available ? '✓' : '');
+            $sheet->setCellValue("F{$currentRow}", ! $item->stock_available ? '✓' : '');
 
             // Issue quantity and remarks
             $sheet->setCellValue("G{$currentRow}", $item->quantity_issued ?? '');
@@ -1111,35 +1120,35 @@ class RisSlipController extends Controller
         // $currentRow += 1; // Add small space before purpose
 
         // Purpose section
-        $sheet->setCellValue("A{$currentRow}", "Purpose:");
+        $sheet->setCellValue("A{$currentRow}", 'Purpose:');
         $sheet->getStyle("A{$currentRow}")->applyFromArray([
             'font' => ['bold' => true],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F2F2F2']
+                'color' => ['rgb' => 'F2F2F2'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $sheet->mergeCells("B{$currentRow}:H{$currentRow}");
         $sheet->getStyle("B{$currentRow}:H{$currentRow}")->applyFromArray([
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F2F2F2']
+                'color' => ['rgb' => 'F2F2F2'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $currentRow++;
 
         // Purpose content (smaller - only 2 rows)
-        $sheet->mergeCells("A{$currentRow}:H" . ($currentRow + 1));
+        $sheet->mergeCells("A{$currentRow}:H".($currentRow + 1));
         $sheet->setCellValue("A{$currentRow}", $risSlip->purpose);
-        $sheet->getStyle("A{$currentRow}:H" . ($currentRow + 1))->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
+        $sheet->getStyle("A{$currentRow}:H".($currentRow + 1))->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("A{$currentRow}")->getAlignment()->setVertical(Alignment::VERTICAL_TOP)->setWrapText(true);
         $sheet->getRowDimension($currentRow)->setRowHeight(30);
 
@@ -1150,27 +1159,27 @@ class RisSlipController extends Controller
 
         // Header row with labels
         $sheet->mergeCells("A{$currentRow}:B{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "");
+        $sheet->setCellValue("A{$currentRow}", '');
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("C{$currentRow}", "Requested by:");
+        $sheet->setCellValue("C{$currentRow}", 'Requested by:');
         $sheet->getStyle("C{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("C{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("C{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         $sheet->mergeCells("D{$currentRow}:E{$currentRow}");
-        $sheet->setCellValue("D{$currentRow}", "Approved by:");
+        $sheet->setCellValue("D{$currentRow}", 'Approved by:');
         $sheet->getStyle("D{$currentRow}:E{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("D{$currentRow}:E{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("D{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         $sheet->mergeCells("F{$currentRow}:G{$currentRow}");
-        $sheet->setCellValue("F{$currentRow}", "Issued by:");
+        $sheet->setCellValue("F{$currentRow}", 'Issued by:');
         $sheet->getStyle("F{$currentRow}:G{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("F{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("F{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
-        $sheet->setCellValue("H{$currentRow}", "Received by:");
+        $sheet->setCellValue("H{$currentRow}", 'Received by:');
         $sheet->getStyle("H{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("H{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("H{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
@@ -1179,7 +1188,7 @@ class RisSlipController extends Controller
 
         // Signature row with label in columns A-B
         $sheet->mergeCells("A{$currentRow}:B{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "Signature :");
+        $sheet->setCellValue("A{$currentRow}", 'Signature :');
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
@@ -1196,9 +1205,9 @@ class RisSlipController extends Controller
         // Requested by (Column C) - IMAGE OR SGD
         if ($risSlip->requester && $risSlip->requester_signature_type == 'esign' && $risSlip->requester->signature_path) {
             try {
-                $signaturePath = storage_path('app/public/' . $risSlip->requester->signature_path);
+                $signaturePath = storage_path('app/public/'.$risSlip->requester->signature_path);
                 if (file_exists($signaturePath)) {
-                    $drawing = new Drawing();
+                    $drawing = new Drawing;
                     $drawing->setName('Requester Signature');
                     $drawing->setDescription('Requester Signature');
                     $drawing->setPath($signaturePath);
@@ -1208,15 +1217,15 @@ class RisSlipController extends Controller
                     $drawing->setCoordinates("C{$currentRow}");
                     $drawing->setWorksheet($sheet);
                 } else {
-                    $sheet->setCellValue("C{$currentRow}", "SGD");
+                    $sheet->setCellValue("C{$currentRow}", 'SGD');
                     $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
                 }
             } catch (Exception $e) {
-                $sheet->setCellValue("C{$currentRow}", "SGD");
+                $sheet->setCellValue("C{$currentRow}", 'SGD');
                 $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
             }
         } elseif ($risSlip->requester) {
-            $sheet->setCellValue("C{$currentRow}", "SGD");
+            $sheet->setCellValue("C{$currentRow}", 'SGD');
             $sheet->getStyle("C{$currentRow}")->getFont()->setItalic(true)->setBold(true);
         }
         $sheet->getStyle("C{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
@@ -1225,9 +1234,9 @@ class RisSlipController extends Controller
         $sheet->mergeCells("D{$currentRow}:E{$currentRow}");
         if ($risSlip->approved_by && $risSlip->approver_signature_type == 'esign' && $risSlip->approver && $risSlip->approver->signature_path) {
             try {
-                $signaturePath = storage_path('app/public/' . $risSlip->approver->signature_path);
+                $signaturePath = storage_path('app/public/'.$risSlip->approver->signature_path);
                 if (file_exists($signaturePath)) {
-                    $drawing = new Drawing();
+                    $drawing = new Drawing;
                     $drawing->setName('Approver Signature');
                     $drawing->setDescription('Approver Signature');
                     $drawing->setPath($signaturePath);
@@ -1237,15 +1246,15 @@ class RisSlipController extends Controller
                     $drawing->setCoordinates("D{$currentRow}");
                     $drawing->setWorksheet($sheet);
                 } else {
-                    $sheet->setCellValue("D{$currentRow}", "SGD");
+                    $sheet->setCellValue("D{$currentRow}", 'SGD');
                     $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
                 }
             } catch (Exception $e) {
-                $sheet->setCellValue("D{$currentRow}", "SGD");
+                $sheet->setCellValue("D{$currentRow}", 'SGD');
                 $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
             }
         } elseif ($risSlip->approved_by) {
-            $sheet->setCellValue("D{$currentRow}", "SGD");
+            $sheet->setCellValue("D{$currentRow}", 'SGD');
             $sheet->getStyle("D{$currentRow}")->getFont()->setItalic(true)->setBold(true);
         }
         $sheet->getStyle("D{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
@@ -1254,9 +1263,9 @@ class RisSlipController extends Controller
         $sheet->mergeCells("F{$currentRow}:G{$currentRow}");
         if ($risSlip->issued_by && $risSlip->issuer_signature_type == 'esign' && $risSlip->issuer && $risSlip->issuer->signature_path) {
             try {
-                $signaturePath = storage_path('app/public/' . $risSlip->issuer->signature_path);
+                $signaturePath = storage_path('app/public/'.$risSlip->issuer->signature_path);
                 if (file_exists($signaturePath)) {
-                    $drawing = new Drawing();
+                    $drawing = new Drawing;
                     $drawing->setName('Issuer Signature');
                     $drawing->setDescription('Issuer Signature');
                     $drawing->setPath($signaturePath);
@@ -1266,15 +1275,15 @@ class RisSlipController extends Controller
                     $drawing->setCoordinates("F{$currentRow}");
                     $drawing->setWorksheet($sheet);
                 } else {
-                    $sheet->setCellValue("F{$currentRow}", "SGD");
+                    $sheet->setCellValue("F{$currentRow}", 'SGD');
                     $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
                 }
             } catch (Exception $e) {
-                $sheet->setCellValue("F{$currentRow}", "SGD");
+                $sheet->setCellValue("F{$currentRow}", 'SGD');
                 $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
             }
         } elseif ($risSlip->issued_by) {
-            $sheet->setCellValue("F{$currentRow}", "SGD");
+            $sheet->setCellValue("F{$currentRow}", 'SGD');
             $sheet->getStyle("F{$currentRow}")->getFont()->setItalic(true)->setBold(true);
         }
         $sheet->getStyle("F{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
@@ -1282,9 +1291,9 @@ class RisSlipController extends Controller
         // Received by (Column H) - IMAGE OR SGD
         if ($risSlip->received_at && $risSlip->receiver_signature_type == 'esign' && $risSlip->receiver && $risSlip->receiver->signature_path) {
             try {
-                $signaturePath = storage_path('app/public/' . $risSlip->receiver->signature_path);
+                $signaturePath = storage_path('app/public/'.$risSlip->receiver->signature_path);
                 if (file_exists($signaturePath)) {
-                    $drawing = new Drawing();
+                    $drawing = new Drawing;
                     $drawing->setName('Receiver Signature');
                     $drawing->setDescription('Receiver Signature');
                     $drawing->setPath($signaturePath);
@@ -1294,15 +1303,15 @@ class RisSlipController extends Controller
                     $drawing->setCoordinates("H{$currentRow}");
                     $drawing->setWorksheet($sheet);
                 } else {
-                    $sheet->setCellValue("H{$currentRow}", "SGD");
+                    $sheet->setCellValue("H{$currentRow}", 'SGD');
                     $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
                 }
             } catch (Exception $e) {
-                $sheet->setCellValue("H{$currentRow}", "SGD");
+                $sheet->setCellValue("H{$currentRow}", 'SGD');
                 $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
             }
         } elseif ($risSlip->received_at) {
-            $sheet->setCellValue("H{$currentRow}", "SGD");
+            $sheet->setCellValue("H{$currentRow}", 'SGD');
             $sheet->getStyle("H{$currentRow}")->getFont()->setItalic(true)->setBold(true);
         }
         $sheet->getStyle("H{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER)->setVertical(Alignment::VERTICAL_CENTER);
@@ -1311,7 +1320,7 @@ class RisSlipController extends Controller
 
         // Printed Name row
         $sheet->mergeCells("A{$currentRow}:B{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "Printed Name :");
+        $sheet->setCellValue("A{$currentRow}", 'Printed Name :');
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
@@ -1320,7 +1329,7 @@ class RisSlipController extends Controller
             $risSlip->requester->name ?? '____________________',
             $risSlip->approved_by ? optional($risSlip->approver)->name : '____________________',
             $risSlip->issued_by ? optional($risSlip->issuer)->name : '____________________',
-            $risSlip->received_by ? optional($risSlip->receiver)->name : '____________________'
+            $risSlip->received_by ? optional($risSlip->receiver)->name : '____________________',
         ];
 
         // Requested by name (Column C)
@@ -1353,7 +1362,7 @@ class RisSlipController extends Controller
 
         // Designation row
         $sheet->mergeCells("A{$currentRow}:B{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "Designation :");
+        $sheet->setCellValue("A{$currentRow}", 'Designation :');
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
@@ -1362,7 +1371,7 @@ class RisSlipController extends Controller
             optional($risSlip->requester)->designation->name ?? 'Designation',
             $risSlip->approved_by ? optional($risSlip->approver)->designation->name ?? 'Designation' : 'Designation',
             $risSlip->issued_by ? optional($risSlip->issuer)->designation->name ?? 'Designation' : 'Designation',
-            $risSlip->received_by ? optional($risSlip->receiver)->designation->name ?? 'Designation' : 'Designation'
+            $risSlip->received_by ? optional($risSlip->receiver)->designation->name ?? 'Designation' : 'Designation',
         ];
 
         // Requested by designation (Column C)
@@ -1391,7 +1400,7 @@ class RisSlipController extends Controller
 
         // Date row
         $sheet->mergeCells("A{$currentRow}:B{$currentRow}");
-        $sheet->setCellValue("A{$currentRow}", "Date :");
+        $sheet->setCellValue("A{$currentRow}", 'Date :');
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getFont()->setBold(true);
         $sheet->getStyle("A{$currentRow}:B{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
@@ -1400,7 +1409,7 @@ class RisSlipController extends Controller
             $risSlip->created_at->format('M d, Y'),
             $risSlip->approved_at ? $risSlip->approved_at->format('M d, Y') : '____________________',
             $risSlip->issued_at ? $risSlip->issued_at->format('M d, Y') : '____________________',
-            $risSlip->received_at ? $risSlip->received_at->format('M d, Y') : '____________________'
+            $risSlip->received_at ? $risSlip->received_at->format('M d, Y') : '____________________',
         ];
 
         // Requested by date (Column C)
@@ -1437,10 +1446,10 @@ class RisSlipController extends Controller
 
         // Write file
         $writer = new Xlsx($spreadsheet);
-        $filename = 'RIS_' . $risSlip->ris_no . '_' . $risSlip->created_at->format('Y_m_d') . '.xlsx';
+        $filename = 'RIS_'.$risSlip->ris_no.'_'.$risSlip->created_at->format('Y_m_d').'.xlsx';
 
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        header('Content-Disposition: attachment;filename="' . $filename . '"');
+        header('Content-Disposition: attachment;filename="'.$filename.'"');
         header('Cache-Control: max-age=0');
 
         $writer->save('php://output');
@@ -1461,7 +1470,7 @@ class RisSlipController extends Controller
                 'required',
                 'date',
                 'before_or_equal:today',
-                'after_or_equal:' . now()->subYears(5)->format('Y-m-d')
+                'after_or_equal:'.now()->subYears(5)->format('Y-m-d'),
             ],
             'reference_no' => 'nullable|string|max:255',
             'entity_name' => 'required|string|max:255',
@@ -1470,7 +1479,7 @@ class RisSlipController extends Controller
             'fund_cluster' => 'nullable|in:101,151',
             'responsibility_center_code' => 'nullable|string|max:50',
             'requested_by' => 'required|exists:users,id',
-            'purpose' => 'required|string|max:1000',
+            'purpose' => 'nullable|string|max:1000',
             'final_status' => 'required|in:completed,posted,declined',
             'decline_reason' => 'nullable|string|max:500',
 
@@ -1487,16 +1496,18 @@ class RisSlipController extends Controller
         // If "declined" status, require a reason
         if ($validated['final_status'] === 'declined' && empty($validated['decline_reason'])) {
             return back()->withErrors([
-                'decline_reason' => 'Decline reason is required when status is declined.'
+                'decline_reason' => 'Decline reason is required when status is declined.',
             ])->withInput();
         }
 
         // Check for duplicate items (existing validation)
-        if (!empty($validated['reference_no'])) {
-            $existingItems = \App\Models\RisSlip::where('ris_no', $validated['reference_no'])
+        if (! empty($validated['reference_no'])) {
+            $existingItems = RisSlip::where('ris_no', $validated['reference_no'])
                 ->with('items')
                 ->get()
-                ->flatMap(function($ris) { return $ris->items->pluck('supply_id'); })
+                ->flatMap(function ($ris) {
+                    return $ris->items->pluck('supply_id');
+                })
                 ->unique()
                 ->toArray();
 
@@ -1504,19 +1515,21 @@ class RisSlipController extends Controller
             $duplicates = array_intersect($existingItems, $newItems);
 
             if (count($duplicates) > 0) {
-                $itemNames = \App\Models\Supply::whereIn('supply_id', $duplicates)->pluck('item_name')->toArray();
+                $itemNames = Supply::whereIn('supply_id', $duplicates)->pluck('item_name')->toArray();
                 $duplicateList = implode(', ', $itemNames);
 
                 return back()
                     ->withErrors([
-                        'reference_no' => 'This RIS number already has the following item(s): ' . $duplicateList . '. Each item can only appear once per RIS number.'
+                        'reference_no' => 'This RIS number already has the following item(s): '.$duplicateList.'. Each item can only appear once per RIS number.',
                     ])
                     ->withInput();
             }
         }
 
         try {
-            return \DB::transaction(function() use ($validated, $referenceNumberService, $currentCAO) {
+            return \DB::transaction(function () use ($validated, $currentCAO) {
+                // Same first-come, first-served lock as a requester's submit.
+                $this->lockStockOf(collect($validated['items'])->pluck('supply_id'));
 
                 // Stock validation (keeping existing logic)
                 $stockValidationErrors = [];
@@ -1524,22 +1537,23 @@ class RisSlipController extends Controller
                     $supplyId = $item['supply_id'];
                     $requestedQty = $item['quantity_requested'];
 
-                    $stock = \App\Models\SupplyStock::where('supply_id', $supplyId)
+                    $stock = SupplyStock::where('supply_id', $supplyId)
                         ->where('status', 'available')
                         ->where('quantity_on_hand', '>', 0)
                         ->first();
 
-                    if (!$stock) {
-                        $supply = \App\Models\Supply::find($supplyId);
+                    if (! $stock) {
+                        $supply = Supply::find($supplyId);
                         $stockValidationErrors[] = [
                             'supply_name' => $supply ? $supply->item_name : 'Unknown',
-                            'message' => 'No IAR found for this supply. Cannot request items without inventory record.'
+                            'message' => 'No IAR found for this supply. Cannot request items without inventory record.',
                         ];
+
                         continue;
                     }
 
-                    $pendingRequested = \App\Models\RisItem::where('supply_id', $supplyId)
-                        ->whereHas('risSlip', function($q) {
+                    $pendingRequested = RisItem::where('supply_id', $supplyId)
+                        ->whereHas('risSlip', function ($q) {
                             $q->whereIn('status', ['draft', 'approved']);
                         })
                         ->sum('quantity_requested');
@@ -1547,17 +1561,17 @@ class RisSlipController extends Controller
                     $currentAvailable = max(0, $stock->quantity_on_hand - $pendingRequested);
 
                     if ($requestedQty > $currentAvailable) {
-                        $supply = \App\Models\Supply::find($supplyId);
+                        $supply = Supply::find($supplyId);
                         $stockValidationErrors[] = [
                             'supply_name' => $supply ? $supply->item_name : 'Unknown',
                             'requested' => $requestedQty,
                             'available' => $currentAvailable,
-                            'message' => "Insufficient stock. Available: {$currentAvailable}, Requested: {$requestedQty}"
+                            'message' => "Insufficient stock. Available: {$currentAvailable}, Requested: {$requestedQty}",
                         ];
                     }
                 }
 
-                if (!empty($stockValidationErrors)) {
+                if (! empty($stockValidationErrors)) {
                     $stockMessages = collect($stockValidationErrors)
                         ->map(fn ($error) => "{$error['supply_name']}: {$error['message']}")
                         ->implode(' ');
@@ -1569,10 +1583,10 @@ class RisSlipController extends Controller
                 }
 
                 // Prepare and Save RIS Slip
-                $risDate = \Carbon\Carbon::parse($validated['ris_date']);
+                $risDate = Carbon::parse($validated['ris_date']);
                 $newRisNumber = $validated['reference_no'] ?? $this->generateHistoricalRisNumber($risDate);
 
-                $risSlip = \App\Models\RisSlip::create([
+                $risSlip = RisSlip::create([
                     'ris_no' => $newRisNumber,
                     'ris_date' => $risDate,
                     'entity_name' => $validated['entity_name'],
@@ -1582,7 +1596,7 @@ class RisSlipController extends Controller
                     'responsibility_center_code' => $validated['responsibility_center_code'],
                     'requested_by' => $validated['requested_by'],
                     'requester_signature_type' => 'sgd',
-                    'purpose' => $validated['purpose'],
+                    'purpose' => $validated['purpose'] ?? null,
                     'status' => 'draft',
 
                     // MANUAL ENTRY FIELDS
@@ -1603,7 +1617,7 @@ class RisSlipController extends Controller
 
                 // RIS Items
                 foreach ($validated['items'] as $item) {
-                    \App\Models\RisItem::create([
+                    RisItem::create([
                         'ris_id' => $risSlip->ris_id,
                         'supply_id' => $item['supply_id'],
                         'quantity_requested' => $item['quantity_requested'],
@@ -1643,7 +1657,7 @@ class RisSlipController extends Controller
                 return redirect()
                     ->route('ris.index')
                     ->with('success', "Manual RIS {$newRisNumber} created successfully for date {$risDate->format('M d, Y')}.");
-            });
+            }, 3); // retried if it deadlocks with another request on the stock lock
 
         } catch (\Exception $e) {
             \Log::error('Failed to create manual RIS', [
@@ -1653,7 +1667,7 @@ class RisSlipController extends Controller
             ]);
 
             return back()
-                ->with('error', 'Failed to create manual RIS: ' . $e->getMessage())
+                ->with('error', 'Failed to create manual RIS: '.$e->getMessage())
                 ->withInput();
         }
     }
@@ -1676,14 +1690,13 @@ class RisSlipController extends Controller
         return RisSignatory::current();
     }
 
-
     private function applyHistoricalStatusWithAutoReceiver(RisSlip $risSlip, array $validated, Carbon $risDate, array $caoInfo)
     {
         $currentUserId = auth()->id(); // Current user for issued/received
         $caoUserId = $caoInfo['id'];
 
         // If no CAO user found, create one or use current user as fallback for approval
-        if (!$caoUserId) {
+        if (! $caoUserId) {
             $caoUserId = $this->getOrCreateCAOUserRecord($caoInfo);
         }
 
@@ -1732,7 +1745,6 @@ class RisSlipController extends Controller
                 break;
         }
     }
-
 
     // /**
     //  * Apply historical status with CAO ONLY for approval part
@@ -1806,7 +1818,7 @@ class RisSlipController extends Controller
         try {
             $caoUser = User::where('name', $caoInfo['name'])->first();
 
-            if (!$caoUser) {
+            if (! $caoUser) {
                 $caoUser = User::create([
                     'name' => $caoInfo['name'],
                     'email' => $caoInfo['email'],
@@ -1829,7 +1841,6 @@ class RisSlipController extends Controller
         }
     }
 
-
     /**
      * Generate unique RIS number for historical dates - handles gaps properly
      */
@@ -1839,20 +1850,22 @@ class RisSlipController extends Controller
         $month = $date->format('m');
         $pattern = "RIS {$year}-{$month}-";
 
-        $existingNumbers = RisSlip::where('ris_no', 'like', $pattern . '%')
+        $existingNumbers = RisSlip::where('ris_no', 'like', $pattern.'%')
             ->pluck('ris_no')
-            ->map(function($risNo) use ($pattern) {
+            ->map(function ($risNo) use ($pattern) {
                 $numberPart = str_replace($pattern, '', $risNo);
+
                 return intval($numberPart);
             })
-            ->filter(function($num) {
+            ->filter(function ($num) {
                 return $num > 0;
             })
             ->sort()
             ->values();
 
         $next = $existingNumbers->isEmpty() ? 1 : $existingNumbers->max() + 1;
-        return sprintf("RIS %s-%s-%03d", $year, $month, $next);
+
+        return sprintf('RIS %s-%s-%03d', $year, $month, $next);
     }
 
     /**
@@ -1876,7 +1889,7 @@ class RisSlipController extends Controller
                 Log::info('Manual RIS declined', [
                     'ris_no' => $risSlip->ris_no,
                     'reason' => $validated['decline_reason'],
-                    'declined_by' => auth()->user()->name
+                    'declined_by' => auth()->user()->name,
                 ]);
                 break;
 
@@ -1898,7 +1911,7 @@ class RisSlipController extends Controller
 
                 Log::info('Manual RIS issued', [
                     'ris_no' => $risSlip->ris_no,
-                    'issued_by' => auth()->user()->name
+                    'issued_by' => auth()->user()->name,
                 ]);
                 break;
 
@@ -1924,7 +1937,7 @@ class RisSlipController extends Controller
                 Log::info('Manual RIS completed', [
                     'ris_no' => $risSlip->ris_no,
                     'completed_by' => auth()->user()->name,
-                    'received_by' => User::find($validated['requested_by'])->name ?? 'Unknown'
+                    'received_by' => User::find($validated['requested_by'])->name ?? 'Unknown',
                 ]);
                 break;
         }
@@ -1946,7 +1959,9 @@ class RisSlipController extends Controller
                 $remainingQuantity = $issueQty;
 
                 foreach ($matchingStocks as $stock) {
-                    if ($remainingQuantity <= 0) break;
+                    if ($remainingQuantity <= 0) {
+                        break;
+                    }
 
                     $qtyToDeduct = min($remainingQuantity, $stock->quantity_on_hand);
                     $stock->quantity_on_hand -= $qtyToDeduct;
@@ -1982,7 +1997,6 @@ class RisSlipController extends Controller
         }
     }
 
-
     /**
      * AJAX: Get all active supplies (even if quantity_on_hand == 0)
      */
@@ -1995,22 +2009,22 @@ class RisSlipController extends Controller
         $supplies = Supply::where('is_active', true)
             ->orderBy('item_name')
             ->get()
-            ->map(function($supply) {
+            ->map(function ($supply) {
                 // total on‐hand, even if zero
                 $available = SupplyStock::getTotalAvailableQuantity($supply->supply_id);
+
                 return [
-                    'supply_id'          => $supply->supply_id,
-                    'stock_no'           => $supply->stock_no,
-                    'item_name'          => $supply->item_name,
-                    'description'        => $supply->description,
-                    'unit_of_measurement'=> $supply->unit_of_measurement,
+                    'supply_id' => $supply->supply_id,
+                    'stock_no' => $supply->stock_no,
+                    'item_name' => $supply->item_name,
+                    'description' => $supply->description,
+                    'unit_of_measurement' => $supply->unit_of_measurement,
                     'available_quantity' => $available,
                 ];
             });
 
         return response()->json(['supplies' => $supplies]);
     }
-
 
     public function validateManualStock(Request $request)
     {
@@ -2045,7 +2059,6 @@ class RisSlipController extends Controller
         ]);
     }
 
-
     public function nextRis(Request $request)
     {
         $data = $request->validate([
@@ -2059,13 +2072,13 @@ class RisSlipController extends Controller
             return response()->json([
                 'success' => true,
                 'defaultRis' => $defaultRis,
-                'date' => $date->format('Y-m-d')
+                'date' => $date->format('Y-m-d'),
             ]);
 
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to generate RIS number: ' . $e->getMessage()
+                'error' => 'Failed to generate RIS number: '.$e->getMessage(),
             ], 500);
         }
     }
@@ -2079,13 +2092,13 @@ class RisSlipController extends Controller
 
         \Log::info('getDepartmentDetails called', ['department_id' => $departmentId]);
 
-        if (!$departmentId) {
+        if (! $departmentId) {
             return response()->json(['office' => '', 'debug' => 'No department ID provided']);
         }
 
         $department = Department::find($departmentId);
 
-        if (!$department) {
+        if (! $department) {
             return response()->json(['office' => '', 'debug' => 'Department not found']);
         }
 
@@ -2099,9 +2112,7 @@ class RisSlipController extends Controller
             'office' => $office,
             'debug' => 'Success',
             'department_name' => $department->name,
-            'department_data' => $department->toArray()
+            'department_data' => $department->toArray(),
         ]);
     }
-
 }
-

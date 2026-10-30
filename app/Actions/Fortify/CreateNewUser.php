@@ -5,6 +5,8 @@ namespace App\Actions\Fortify;
 use App\Concerns\PasswordValidationRules;
 use App\Models\User;
 use App\Rules\ChedEmailRule;
+use App\Services\ActivityRecorder;
+use App\Services\Notifier;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 
@@ -30,7 +32,7 @@ class CreateNewUser implements CreatesNewUsers
             'designation_id' => ['required', 'exists:designations,id'],
         ])->validate();
 
-        return User::create([
+        $user = User::create([
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => $input['password'],
@@ -38,5 +40,10 @@ class CreateNewUser implements CreatesNewUsers
             'designation_id' => $input['designation_id'],
             'status' => false,
         ]);
+
+        // Tell whoever can activate it (the entry its own save logged).
+        app(Notifier::class)->accountRequested(app(ActivityRecorder::class)->latestFor($user));
+
+        return $user;
     }
 }

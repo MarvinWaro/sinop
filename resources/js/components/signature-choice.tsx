@@ -1,8 +1,7 @@
 import { usePage } from '@inertiajs/react';
-import { Link } from '@inertiajs/react';
-import { Label } from '@/components/ui/label';
+import { useState } from 'react';
+import { SignatureUpload } from '@/components/signature-upload';
 import { cn } from '@/lib/utils';
-import { edit as editSignature } from '@/routes/signature';
 import type { SignatureType } from '@/types';
 
 type Props = {
@@ -18,8 +17,9 @@ type Props = {
 
 /**
  * E-signature vs. "SGD" (signed) choice used when requesting, approving,
- * issuing and receiving an RIS. E-sign is only available once the user has
- * uploaded a signature.
+ * issuing and receiving an RIS. E-sign needs an uploaded signature; without
+ * one, it can be uploaded right here (and is then selected), so the form
+ * being filled in isn't lost.
  */
 export function SignatureChoice({
     value,
@@ -32,6 +32,7 @@ export function SignatureChoice({
 }: Props) {
     const { auth } = usePage().props;
     const signatureUrl = auth.user?.signature_url ?? null;
+    const [uploading, setUploading] = useState(false);
 
     return (
         <fieldset className={cn('grid gap-3', className)}>
@@ -41,8 +42,9 @@ export function SignatureChoice({
                     className={cn(
                         'flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm',
                         value === 'esign' && 'border-primary bg-muted/50',
-                        !signatureUrl && 'cursor-not-allowed opacity-60',
+                        !signatureUrl && 'border-dashed',
                     )}
+                    onClick={() => !signatureUrl && setUploading(true)}
                 >
                     <input
                         type="radio"
@@ -56,7 +58,9 @@ export function SignatureChoice({
                     <span>
                         <span className="block font-medium">E-signature</span>
                         <span className="text-muted-foreground">
-                            Use your uploaded signature
+                            {signatureUrl
+                                ? 'Use your uploaded signature'
+                                : 'Upload your signature to use it'}
                         </span>
                     </span>
                 </label>
@@ -116,17 +120,28 @@ export function SignatureChoice({
                         )}
                     </div>
                 )
+            ) : uploading ? (
+                <div className="rounded-md border p-3">
+                    <SignatureUpload
+                        saveLabel="Save and use e-signature"
+                        onUploaded={() => {
+                            setUploading(false);
+                            onChange('esign');
+                        }}
+                    />
+                </div>
             ) : (
-                <Label className="text-xs font-normal text-muted-foreground">
-                    No e-signature uploaded yet.{' '}
-                    <Link
-                        href={editSignature()}
-                        className="underline underline-offset-4"
+                <p className="text-xs text-muted-foreground">
+                    No e-signature yet.{' '}
+                    <button
+                        type="button"
+                        onClick={() => setUploading(true)}
+                        className="font-medium text-foreground underline underline-offset-4"
                     >
-                        Upload one in Settings
-                    </Link>
-                    .
-                </Label>
+                        Upload one now
+                    </button>{' '}
+                    to sign electronically.
+                </p>
             )}
         </fieldset>
     );

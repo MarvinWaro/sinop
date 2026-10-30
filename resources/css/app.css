@@ -65,6 +65,46 @@
     --color-band-foreground: var(--band-foreground);
 }
 
+/* Landing page and sign-in motion (components/landing). Used with motion-safe:. */
+@theme {
+    --animate-aurora: aurora 24s ease-in-out infinite alternate;
+    --animate-float: float 8s ease-in-out infinite;
+    --animate-shimmer: shimmer 7s ease-in-out infinite;
+
+    /* Sweep the text-shimmer glint left to right, then rest off-screen. */
+    @keyframes shimmer {
+        0% {
+            background-position: 100% 0;
+        }
+        55%,
+        100% {
+            background-position: 0% 0;
+        }
+    }
+
+    @keyframes aurora {
+        0% {
+            transform: translate3d(0, 0, 0) scale(1);
+        }
+        50% {
+            transform: translate3d(6%, -8%, 0) scale(1.12);
+        }
+        100% {
+            transform: translate3d(-6%, 6%, 0) scale(0.95);
+        }
+    }
+
+    @keyframes float {
+        0%,
+        100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-10px);
+        }
+    }
+}
+
 /*
  * SAP Fiori palette (same tokens as UniFAST's "SAP Fiori" theme): calm
  * business blues on white, a light grey chrome for the sidebar, and navy-slate
@@ -319,6 +359,25 @@ html.theme-notion :is(h1, h2) {
     letter-spacing: -0.02em;
 }
 
+/*
+ * Shimmering text (landing hero): a soft glint sweeps across the letters when
+ * combined with motion-safe:animate-shimmer; without motion it is plain text.
+ * Colours: --shimmer-base (default: text colour), --shimmer-glint (accent).
+ */
+@utility text-shimmer {
+    background-image: linear-gradient(
+        110deg,
+        var(--shimmer-base, var(--foreground)) 42%,
+        var(--shimmer-glint, var(--ring)) 50%,
+        var(--shimmer-base, var(--foreground)) 58%
+    );
+    background-size: 250% 100%;
+    background-position: 100% 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
 @layer base {
     * {
         @apply border-border;
@@ -328,5 +387,11 @@ html.theme-notion :is(h1, h2) {
         @apply bg-background text-foreground;
         /* Figures line up in tables and reports. */
         font-variant-numeric: tabular-nums;
+    }
+
+    /* Search boxes draw their own clear button (components/search-input). */
+    input[type='search']::-webkit-search-cancel-button {
+        -webkit-appearance: none;
+        appearance: none;
     }
 }

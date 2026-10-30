@@ -3,6 +3,7 @@ import type {
     BroadcastingConfig,
     NotificationCounts,
 } from '@/types/auth';
+import type { Inbox } from '@/types/notifications';
 
 declare module 'react' {
     interface InputHTMLAttributes<T> {
@@ -16,7 +17,8 @@ declare module '@inertiajs/core' {
             name: string;
             auth: Auth;
             notifications: NotificationCounts | null;
-            broadcasting: BroadcastingConfig;
+            inbox: Inbox | null;
+            broadcasting: BroadcastingConfig | null;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

@@ -258,7 +258,7 @@ class RisSlip extends Model
             'office' => 'nullable|string|max:255',
             'fund_cluster' => 'nullable|string|max:20',
             'responsibility_center_code' => 'nullable|string|max:50',
-            'purpose' => 'required|string|max:1000',
+            'purpose' => 'nullable|string|max:1000',
             'status' => 'required|in:' . implode(',', RisStatus::all()),
         ];
 

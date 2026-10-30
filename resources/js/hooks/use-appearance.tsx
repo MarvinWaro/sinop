@@ -9,8 +9,18 @@ export type UseAppearanceReturn = {
     readonly updateAppearance: (mode: Appearance) => void;
 };
 
+// Dark until the user picks a mode (Settings › Appearance or the header
+// switch). Keep in step with HandleAppearance's server-side default.
+const DEFAULT_APPEARANCE: Appearance = 'dark';
+// Set when the user picks a mode. 'system' used to be stored automatically,
+// so a stored 'system' only counts once it has been chosen.
+const CHOSEN_KEY = 'appearance_chosen';
+
 const listeners = new Set<() => void>();
-let currentAppearance: Appearance = 'system';
+let currentAppearance: Appearance = DEFAULT_APPEARANCE;
+// Forced light/dark while a page with its own switch is shown (see
+// setAppearanceOverride); null means the user's setting applies.
+let override: ResolvedAppearance | null = null;
 
 const prefersDark = (): boolean => {
     if (typeof window === 'undefined') {
@@ -31,10 +41,20 @@ const setCookie = (name: string, value: string, days = 365): void => {
 
 const getStoredAppearance = (): Appearance => {
     if (typeof window === 'undefined') {
+        return DEFAULT_APPEARANCE;
+    }
+
+    const stored = localStorage.getItem('appearance');
+
+    if (stored === 'light' || stored === 'dark') {
+        return stored;
+    }
+
+    if (stored === 'system' && localStorage.getItem(CHOSEN_KEY)) {
         return 'system';
     }
 
-    return (localStorage.getItem('appearance') as Appearance) || 'system';
+    return DEFAULT_APPEARANCE;
 };
 
 const isDarkMode = (appearance: Appearance): boolean => {
@@ -46,7 +66,7 @@ const applyTheme = (appearance: Appearance): void => {
         return;
     }
 
-    const isDark = isDarkMode(appearance);
+    const isDark = override ? override === 'dark' : isDarkMode(appearance);
 
     document.documentElement.classList.toggle('dark', isDark);
     document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
@@ -75,22 +95,39 @@ export function initializeTheme(): void {
         return;
     }
 
-    if (!localStorage.getItem('appearance')) {
-        localStorage.setItem('appearance', 'system');
-        setCookie('appearance', 'system');
-    }
+    // Public pages arrive with their mode already chosen by the server
+    // (HandleAppearance), so the first paint doesn't flash the other mode.
+    const pageMode = document.documentElement.dataset.appearanceOverride;
+    override = pageMode === 'dark' || pageMode === 'light' ? pageMode : null;
 
     currentAppearance = getStoredAppearance();
+
+    // Keep storage and the cookie (the server's first paint) in step.
+    localStorage.setItem('appearance', currentAppearance);
+    setCookie('appearance', currentAppearance);
+
     applyTheme(currentAppearance);
 
     // Set up system theme change listener
     mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }
 
+/**
+ * Force light or dark while a page with its own switch is shown (landing and
+ * sign-in pages, see use-public-appearance); null hands control back to the
+ * user's appearance setting.
+ */
+export function setAppearanceOverride(mode: ResolvedAppearance | null): void {
+    override = mode;
+    applyTheme(currentAppearance);
+    notify();
+}
+
 export function useAppearance(): UseAppearanceReturn {
+    // The mode in effect: a page override wins (so toasts match the page).
     const appearance: Appearance = useSyncExternalStore(
         subscribe,
-        () => currentAppearance,
+        () => override ?? currentAppearance,
         () => 'system',
     );
 
@@ -103,6 +140,7 @@ export function useAppearance(): UseAppearanceReturn {
 
         // Store in localStorage for client-side persistence...
         localStorage.setItem('appearance', mode);
+        localStorage.setItem(CHOSEN_KEY, '1');
 
         // Store in cookie for SSR...
         setCookie('appearance', mode);

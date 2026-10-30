@@ -70,6 +70,14 @@ class ActivityRecorder
     private const VALUE_LIMIT = 500;
 
     /**
+     * The last entry written for each record during this request (the
+     * recorder is scoped per request), for notifications that point at it.
+     *
+     * @var array<string, ActivityLog>
+     */
+    private array $latest = [];
+
+    /**
      * @param  Model|null  $subject  What was acted on.
      * @param  array<string, array{0: mixed, 1: mixed}>  $changes  Field => [before, after]; see changesOf().
      * @param  array<string, mixed>  $properties  Anything else worth keeping (item lines, export filters).
@@ -96,7 +104,7 @@ class ActivityRecorder
             // A console command has no browser or address to record.
             $request = app()->runningInConsole() && ! app()->runningUnitTests() ? null : request();
 
-            return ActivityLog::query()->create([
+            $entry = ActivityLog::query()->create([
                 'user_id' => $actor?->getKey(),
                 'actor_name' => Str::limit($actor->name ?? $actorName ?? 'System', 250, ''),
                 'actor_role' => $actor !== null ? Str::limit($actor->primaryRoleSlug(), 20, '') : null,
@@ -112,6 +120,12 @@ class ActivityRecorder
                 'ip_address' => $request?->ip(),
                 'user_agent' => Str::limit((string) $request?->userAgent(), 512, '') ?: null,
             ]);
+
+            if ($subject !== null) {
+                $this->latest[$this->keyOf($subject)] = $entry;
+            }
+
+            return $entry;
         } catch (Throwable $exception) {
             report($exception);
 
@@ -168,6 +182,20 @@ class ActivityRecorder
         }
 
         return $changes;
+    }
+
+    /**
+     * The entry this request last wrote for the record, e.g. the one a
+     * model's own save logged (LogsActivity); null when none was written.
+     */
+    public function latestFor(Model $model): ?ActivityLog
+    {
+        return $this->latest[$this->keyOf($model)] ?? null;
+    }
+
+    private function keyOf(Model $model): string
+    {
+        return $model::class.'#'.$model->getKey();
     }
 
     /** How an entry names a record: "ALCOHOL (01)", "RIS 2025-12-190", a person's name… */

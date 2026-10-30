@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Enums\ActivityAction;
 use App\Enums\ActivityModule;
+use App\Models\ActivityLog;
 use App\Models\RisItem;
 use App\Models\RisSlip;
 use App\Models\SupplyStock;
@@ -26,7 +27,7 @@ class RisActivity
         ?string $summary = null,
         array $properties = [],
         bool $withStock = false,
-    ): void {
+    ): ?ActivityLog {
         $risSlip->loadMissing(['items.supply', 'department']);
 
         $lines = $risSlip->items->map(function (RisItem $item) use ($withStock): array {
@@ -57,7 +58,7 @@ class RisActivity
             $risSlip->fund_cluster ? "Fund cluster {$risSlip->fund_cluster}" : null,
         ])->filter()->join(' · ');
 
-        app(ActivityRecorder::class)->record(
+        return app(ActivityRecorder::class)->record(
             $action,
             ActivityModule::Ris,
             $risSlip,

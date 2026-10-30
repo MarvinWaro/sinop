@@ -1,9 +1,9 @@
 import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import { FormSelect } from '@/components/form-select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { NativeSelect } from '@/components/ui/native-select';
 import { cn } from '@/lib/utils';
 import { formatMonthKey } from '@/lib/format';
 
@@ -76,32 +76,30 @@ export function MonthClusterFilter({
         >
             <div className="grid gap-2">
                 <Label htmlFor={`${idPrefix}-month`}>Month</Label>
-                <NativeSelect
+                <FormSelect
                     id={`${idPrefix}-month`}
                     value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                >
-                    {monthOptions.map((key) => (
-                        <option key={key} value={key}>
-                            {formatMonthKey(key)}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    onValueChange={(value) => setSelectedMonth(value)}
+                    options={monthOptions.map((key) => ({
+                        value: key,
+                        label: formatMonthKey(key),
+                    }))}
+                />
             </div>
             <div className="grid gap-2">
                 <Label htmlFor={`${idPrefix}-fund-cluster`}>Fund cluster</Label>
-                <NativeSelect
+                <FormSelect
                     id={`${idPrefix}-fund-cluster`}
                     value={cluster}
-                    onChange={(e) => setCluster(e.target.value)}
-                >
-                    <option value="">All fund clusters</option>
-                    {fundClusters.map((fc) => (
-                        <option key={fc} value={fc}>
-                            Fund cluster {fc}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    onValueChange={(value) => setCluster(value)}
+                    options={[
+                        { value: '', label: 'All fund clusters' },
+                        ...fundClusters.map((fc) => ({
+                            value: fc,
+                            label: `Fund cluster ${fc}`,
+                        })),
+                    ]}
+                />
             </div>
             <div className={cn('flex flex-wrap gap-2', stacked && 'pt-2')}>
                 <Button type="submit" variant={submitVariant}>

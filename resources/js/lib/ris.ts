@@ -47,6 +47,21 @@ export function risKey(slip: Pick<RisSlip, 'route_key'>): number {
     return slip.route_key as unknown as number;
 }
 
+/**
+ * The office for a division: what its name carries after the dash
+ * ("Scholarship Division - UniFAST BARMM" → "UniFAST BARMM"), or the whole
+ * name when it has none ("Technical Division").
+ */
+export function officeOfDivision(name: string | null | undefined): string {
+    if (!name) {
+        return '';
+    }
+
+    const dash = name.indexOf(' - ');
+
+    return (dash >= 0 && name.slice(dash + 3).trim()) || name.trim();
+}
+
 /** "Item name, description" as shown on the RIS form. */
 export function supplyLabel(
     supply:

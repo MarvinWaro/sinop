@@ -6,6 +6,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
 import { FormField } from '@/components/form-field';
+import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { SearchForm } from '@/components/search-form';
 import { TablePanel } from '@/components/table-panel';
@@ -19,7 +20,6 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import {
     Table,
     TableBody,
@@ -322,28 +322,29 @@ function SupplyForm({
                     error={form.errors.unit_of_measurement}
                     required
                 >
-                    <NativeSelect
+                    <FormSelect
                         id="unit_of_measurement"
                         value={form.data.unit_of_measurement}
-                        onChange={(e) =>
-                            form.setData('unit_of_measurement', e.target.value)
+                        onValueChange={(value) =>
+                            form.setData('unit_of_measurement', value)
                         }
                         required
-                    >
-                        <option value="" disabled>
-                            Select unit
-                        </option>
-                        {hasCustomUnit && (
-                            <option value={form.data.unit_of_measurement}>
-                                {form.data.unit_of_measurement}
-                            </option>
-                        )}
-                        {unitOptions.map(([value, label]) => (
-                            <option key={value} value={value}>
-                                {label}
-                            </option>
-                        ))}
-                    </NativeSelect>
+                        placeholder="Select unit"
+                        options={[
+                            ...(hasCustomUnit
+                                ? [
+                                      {
+                                          value: form.data.unit_of_measurement,
+                                          label: form.data.unit_of_measurement,
+                                      },
+                                  ]
+                                : []),
+                            ...unitOptions.map(([value, label]) => ({
+                                value,
+                                label,
+                            })),
+                        ]}
+                    />
                 </FormField>
                 <FormField
                     label="Item name"
@@ -382,20 +383,20 @@ function SupplyForm({
                     htmlFor="category_id"
                     error={form.errors.category_id}
                 >
-                    <NativeSelect
+                    <FormSelect
                         id="category_id"
                         value={form.data.category_id}
-                        onChange={(e) =>
-                            form.setData('category_id', e.target.value)
+                        onValueChange={(value) =>
+                            form.setData('category_id', value)
                         }
-                    >
-                        <option value="">Uncategorized</option>
-                        {categories.map((category) => (
-                            <option key={category.id} value={category.id}>
-                                {category.name}
-                            </option>
-                        ))}
-                    </NativeSelect>
+                        options={[
+                            { value: '', label: 'Uncategorized' },
+                            ...categories.map((category) => ({
+                                value: category.id,
+                                label: category.name,
+                            })),
+                        ]}
+                    />
                 </FormField>
                 <FormField
                     label="Reorder point"

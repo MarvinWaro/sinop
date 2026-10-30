@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { NativeSelect } from '@/components/ui/native-select';
+import { FormSelect } from '@/components/form-select';
 import { cn } from '@/lib/utils';
 
 type Props = {
@@ -53,45 +53,41 @@ export function CardFilters({
 
     return (
         <div className="flex flex-wrap gap-2">
-            <NativeSelect
+            <FormSelect
                 value={String(selectedYear)}
-                onChange={(e) => visit({ year: e.target.value, month: null })}
+                onValueChange={(value) => visit({ year: value, month: null })}
                 className={cn('w-32', selectClassName)}
                 aria-label="Year"
-            >
-                {availableYears.map((year) => (
-                    <option key={year} value={year}>
-                        Year {year}
-                    </option>
-                ))}
-            </NativeSelect>
+                options={availableYears.map((year) => ({
+                    value: year,
+                    label: `Year ${year}`,
+                }))}
+            />
             {availableMonths.length > 0 && (
-                <NativeSelect
+                <FormSelect
                     value={selectedMonth ? String(selectedMonth) : ''}
-                    onChange={(e) => visit({ month: e.target.value || null })}
+                    onValueChange={(value) => visit({ month: value || null })}
                     className={cn('w-36', selectClassName)}
                     aria-label="Month"
-                >
-                    <option value="">All months</option>
-                    {availableMonths.map((month) => (
-                        <option key={month.value} value={month.value}>
-                            {month.name}
-                        </option>
-                    ))}
-                </NativeSelect>
+                    options={[
+                        { value: '', label: 'All months' },
+                        ...availableMonths.map((month) => ({
+                            value: month.value,
+                            label: month.name,
+                        })),
+                    ]}
+                />
             )}
-            <NativeSelect
+            <FormSelect
                 value={fundCluster}
-                onChange={(e) => visit({ fund_cluster: e.target.value })}
+                onValueChange={(value) => visit({ fund_cluster: value })}
                 className={cn('w-44', selectClassName)}
                 aria-label="Fund cluster"
-            >
-                {clusters.map((fc) => (
-                    <option key={fc} value={fc}>
-                        Fund cluster {fc}
-                    </option>
-                ))}
-            </NativeSelect>
+                options={clusters.map((fc) => ({
+                    value: fc,
+                    label: `Fund cluster ${fc}`,
+                }))}
+            />
         </div>
     );
 }

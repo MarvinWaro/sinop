@@ -42,10 +42,16 @@ export type NotificationCounts = {
     approved_count?: number;
 };
 
+/** Where the browser listens for live updates (Berth's Soketi app). */
 export type BroadcastingConfig = {
     enabled: boolean;
     key: string | null;
     cluster: string | null;
+    host: string | null;
+    port: number;
+    scheme: string;
+    /** The person's own private channel, e.g. "App.Models.User.5". */
+    channel: string;
 };
 
 export type TwoFactorSetupData = {

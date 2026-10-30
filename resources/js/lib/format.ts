@@ -110,18 +110,81 @@ export function parseDate(value: string | null | undefined): Date | null {
     return Number.isNaN(date.getTime()) ? null : date;
 }
 
+type WallClock = {
+    year: number;
+    /** 0 = January */
+    month: number;
+    day: number;
+    hours: number;
+    minutes: number;
+};
+
+const manilaClock = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hourCycle: 'h23',
+});
+
+const pad2 = (value: number) => String(value).padStart(2, '0');
+
+/**
+ * The date and time to show for a value, the same on the server (SSR) and
+ * in any browser: timestamps with a zone ("…Z") in Philippine time, values
+ * without one ("2025-03-14", "2025-03-14 16:00:00") exactly as written.
+ */
+function wallClock(value: string | null | undefined): WallClock | null {
+    if (!value) {
+        return null;
+    }
+
+    const plain =
+        /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(
+            value,
+        );
+
+    if (plain) {
+        return {
+            year: Number(plain[1]),
+            month: Number(plain[2]) - 1,
+            day: Number(plain[3]),
+            hours: Number(plain[4] ?? 0),
+            minutes: Number(plain[5] ?? 0),
+        };
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    const parts = Object.fromEntries(
+        manilaClock.formatToParts(date).map((part) => [part.type, part.value]),
+    );
+
+    return {
+        year: Number(parts.year),
+        month: Number(parts.month) - 1,
+        day: Number(parts.day),
+        hours: Number(parts.hour) % 24,
+        minutes: Number(parts.minute),
+    };
+}
+
 /** "Mar 14, 2025" (Carbon M d, Y) */
 export function formatDate(
     value: string | null | undefined,
     fallback = '—',
 ): string {
-    const date = parseDate(value);
+    const clock = wallClock(value);
 
-    if (!date) {
-        return fallback;
-    }
-
-    return `${MONTHS_SHORT[date.getMonth()]} ${String(date.getDate()).padStart(2, '0')}, ${date.getFullYear()}`;
+    return clock
+        ? `${MONTHS_SHORT[clock.month]} ${pad2(clock.day)}, ${clock.year}`
+        : fallback;
 }
 
 /** "March 14, 2025" (Carbon F d, Y) */
@@ -129,13 +192,57 @@ export function formatLongDate(
     value: string | null | undefined,
     fallback = '—',
 ): string {
+    const clock = wallClock(value);
+
+    return clock
+        ? `${MONTHS_LONG[clock.month]} ${pad2(clock.day)}, ${clock.year}`
+        : fallback;
+}
+
+const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+
+/**
+ * "just now", "5 min ago", "3 hr ago", "yesterday", then "Oct 22" (and the
+ * year when it isn't this year), for notifications.
+ */
+export function formatRelative(
+    value: string | null | undefined,
+    now: Date = new Date(),
+): string {
     const date = parseDate(value);
 
     if (!date) {
-        return fallback;
+        return '';
     }
 
-    return `${MONTHS_LONG[date.getMonth()]} ${String(date.getDate()).padStart(2, '0')}, ${date.getFullYear()}`;
+    const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
+
+    if (seconds < 45) {
+        return 'just now';
+    }
+
+    if (seconds < 3600) {
+        return `${Math.round(seconds / 60)} min ago`;
+    }
+
+    if (seconds < 86_400) {
+        return `${Math.round(seconds / 3600)} hr ago`;
+    }
+
+    if (seconds < 2 * 86_400) {
+        return relative.format(-1, 'day');
+    }
+
+    const clock = wallClock(value);
+    const thisYear = wallClock(now.toISOString())?.year;
+
+    if (!clock) {
+        return '';
+    }
+
+    const day = `${MONTHS_SHORT[clock.month]} ${clock.day}`;
+
+    return clock.year === thisYear ? day : `${day}, ${clock.year}`;
 }
 
 /** "02:30 PM" (Carbon h:i A) */
@@ -143,16 +250,15 @@ export function formatTime(
     value: string | null | undefined,
     fallback = '',
 ): string {
-    const date = parseDate(value);
+    const clock = wallClock(value);
 
-    if (!date) {
+    if (!clock) {
         return fallback;
     }
 
-    const hours = date.getHours();
-    const h12 = hours % 12 === 0 ? 12 : hours % 12;
+    const h12 = clock.hours % 12 === 0 ? 12 : clock.hours % 12;
 
-    return `${String(h12).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
+    return `${pad2(h12)}:${pad2(clock.minutes)} ${clock.hours >= 12 ? 'PM' : 'AM'}`;
 }
 
 /** "Mar 14, 2025 02:30 PM" */
@@ -160,13 +266,9 @@ export function formatDateTime(
     value: string | null | undefined,
     fallback = '—',
 ): string {
-    const date = parseDate(value);
-
-    if (!date) {
-        return fallback;
-    }
-
-    return `${formatDate(value)} ${formatTime(value)}`;
+    return wallClock(value)
+        ? `${formatDate(value)} ${formatTime(value)}`
+        : fallback;
 }
 
 /** "2025-03" -> "March 2025" */

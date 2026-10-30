@@ -3,6 +3,7 @@ import { ClipboardList, FileSpreadsheet, Info } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { FormField } from '@/components/form-field';
+import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,7 +14,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { NativeSelect } from '@/components/ui/native-select';
 import { useCan } from '@/hooks/use-can';
 import { exportExcel, generate, index as rpciIndex } from '@/routes/rpci';
 import { index as stockCardsIndex } from '@/routes/stock-cards';
@@ -76,59 +76,58 @@ export default function RpciIndex({
                             </CardHeader>
                             <CardContent className="grid gap-4">
                                 <FormField label="Year" htmlFor="year">
-                                    <NativeSelect
+                                    <FormSelect
                                         id="year"
                                         value={year}
-                                        onChange={(e) =>
-                                            setYear(e.target.value)
+                                        onValueChange={(value) =>
+                                            setYear(value)
                                         }
-                                    >
-                                        {years.map((y) => (
-                                            <option key={y} value={y}>
-                                                {y}
-                                            </option>
-                                        ))}
-                                    </NativeSelect>
+                                        options={years.map((y) => ({
+                                            value: y,
+                                            label: String(y),
+                                        }))}
+                                    />
                                 </FormField>
                                 <FormField label="Semester" htmlFor="semester">
-                                    <NativeSelect
+                                    <FormSelect
                                         id="semester"
                                         value={semester}
-                                        onChange={(e) =>
-                                            setSemester(e.target.value)
+                                        onValueChange={(value) =>
+                                            setSemester(value)
                                         }
-                                    >
-                                        <option value="1">
-                                            1st semester (Jan – Jun)
-                                        </option>
-                                        <option value="2">
-                                            2nd semester (Jul – Dec)
-                                        </option>
-                                    </NativeSelect>
+                                        options={[
+                                            {
+                                                value: '1',
+                                                label: '1st semester (Jan – Jun)',
+                                            },
+                                            {
+                                                value: '2',
+                                                label: '2nd semester (Jul – Dec)',
+                                            },
+                                        ]}
+                                    />
                                 </FormField>
                                 <FormField
                                     label="Fund cluster"
                                     htmlFor="fund_cluster"
                                 >
-                                    <NativeSelect
+                                    <FormSelect
                                         id="fund_cluster"
                                         value={fundCluster}
-                                        onChange={(e) =>
-                                            setFundCluster(e.target.value)
+                                        onValueChange={(value) =>
+                                            setFundCluster(value)
                                         }
-                                    >
-                                        <option value="">
-                                            All fund clusters
-                                        </option>
-                                        {fundClusters.map((cluster) => (
-                                            <option
-                                                key={cluster}
-                                                value={cluster}
-                                            >
-                                                Fund cluster {cluster}
-                                            </option>
-                                        ))}
-                                    </NativeSelect>
+                                        options={[
+                                            {
+                                                value: '',
+                                                label: 'All fund clusters',
+                                            },
+                                            ...fundClusters.map((cluster) => ({
+                                                value: cluster,
+                                                label: `Fund cluster ${cluster}`,
+                                            })),
+                                        ]}
+                                    />
                                 </FormField>
                             </CardContent>
                             <CardFooter className="flex flex-wrap gap-2">

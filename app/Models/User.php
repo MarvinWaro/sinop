@@ -7,11 +7,13 @@ use App\Enums\ActivityModule;
 use App\Models\Concerns\LogsActivity;
 use App\Services\ActivityRecorder;
 use Database\Factories\UserFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Notifications\Notifiable;
+use Illuminate\Notifications\RoutesNotifications;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
@@ -41,7 +43,9 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, LogsActivity, Notifiable, TwoFactorAuthenticatable;
+    // RoutesNotifications (not Notifiable) still sends mail such as password
+    // resets; `notifications()` below is SINOP's own notification center.
+    use HasFactory, LogsActivity, RoutesNotifications, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -114,6 +118,12 @@ class User extends Authenticatable
     public function properties()
     {
         return $this->hasMany(Property::class, 'user_id');
+    }
+
+    /** The person's notifications (App\Services\Notifier writes them). */
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
     }
 
     public function transactions()
@@ -378,6 +388,14 @@ class User extends Authenticatable
     public function hasPermission(string $slug): bool
     {
         return in_array($slug, $this->permissionSlugs(), true);
+    }
+
+    /** Active accounts holding the permission through a role (super admins hold all). */
+    public function scopeWithPermission(Builder $query, string $slug): void
+    {
+        $query->where('status', true)->whereHas('roles', fn (Builder $roles) => $roles
+            ->where('slug', Role::SUPER_ADMIN)
+            ->orWhereHas('permissions', fn (Builder $permissions) => $permissions->where('slug', $slug)));
     }
 
     /**

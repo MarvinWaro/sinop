@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\RisSlip;
+use App\Services\NotificationInbox;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Middleware;
@@ -79,12 +80,33 @@ class HandleInertiaRequests extends Middleware
                 'originalRole' => $request->session()->get('original_role'),
             ],
             'notifications' => fn () => $user ? $this->notificationCounts($user->id, $isAdmin) : null,
-            'broadcasting' => [
-                'enabled' => config('broadcasting.default') === 'pusher' && filled(config('broadcasting.connections.pusher.key')),
-                'key' => config('broadcasting.connections.pusher.key'),
-                'cluster' => config('broadcasting.connections.pusher.options.cluster'),
-            ],
+            // The bell: unread count and when the newest arrived.
+            'inbox' => fn () => $user ? app(NotificationInbox::class)->summary($user) : null,
+            // Where the browser listens for live updates (Berth's Soketi app).
+            // Off until its values are in .env (AppServiceProvider).
+            'broadcasting' => fn () => $user ? $this->broadcasting($user->id) : null,
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+        ];
+    }
+
+    /**
+     * The public connection details for the WebSocket. The key is public;
+     * the secret never leaves the server.
+     *
+     * @return array{enabled: bool, key: string|null, cluster: string|null, host: string|null, port: int, scheme: string, channel: string}
+     */
+    protected function broadcasting(int $userId): array
+    {
+        $pusher = config('broadcasting.connections.pusher');
+
+        return [
+            'enabled' => config('broadcasting.default') === 'pusher' && filled($pusher['client']['host'] ?? null),
+            'key' => $pusher['key'] ?? null,
+            'cluster' => $pusher['options']['cluster'] ?? null,
+            'host' => $pusher['client']['host'] ?? null,
+            'port' => (int) ($pusher['client']['port'] ?? 443),
+            'scheme' => (string) ($pusher['client']['scheme'] ?? 'https'),
+            'channel' => "App.Models.User.{$userId}",
         ];
     }
 

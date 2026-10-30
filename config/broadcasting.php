@@ -62,6 +62,14 @@ return [
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
             ],
+            // Where browsers connect (Berth's public WebSocket domain), shared
+            // with the page at runtime. The key is public; the secret never
+            // leaves the server. Berth gives these as VITE_PUSHER_*.
+            'client' => [
+                'host' => env('VITE_PUSHER_HOST') ?: env('PUSHER_HOST'),
+                'port' => (int) env('VITE_PUSHER_PORT', env('PUSHER_PORT', 443)),
+                'scheme' => env('VITE_PUSHER_SCHEME', env('PUSHER_SCHEME', 'https')),
+            ],
         ],
 
         'ably' => [
