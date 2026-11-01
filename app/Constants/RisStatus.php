@@ -5,8 +5,11 @@ namespace App\Constants;
 class RisStatus
 {
     public const DRAFT = 'draft';
+
     public const APPROVED = 'approved';
+
     public const POSTED = 'posted';
+
     public const DECLINED = 'declined';
 
     /**
@@ -88,7 +91,7 @@ class RisStatus
      */
     public static function getBadgeClass(string $status): string
     {
-        return match($status) {
+        return match ($status) {
             self::DRAFT => 'bg-gray-200 text-gray-800',
             self::APPROVED => 'bg-blue-200 text-blue-800',
             self::POSTED => 'bg-green-200 text-green-800',

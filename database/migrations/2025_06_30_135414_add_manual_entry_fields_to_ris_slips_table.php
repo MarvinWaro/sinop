@@ -42,7 +42,7 @@ return new class extends Migration
                 'reference_source',
                 'manual_entry_by',
                 'manual_entry_at',
-                'manual_entry_notes'
+                'manual_entry_notes',
             ]);
         });
     }

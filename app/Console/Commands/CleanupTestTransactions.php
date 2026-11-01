@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 class CleanupTestTransactions extends Command
 {
     protected $signature = 'app:cleanup-test-transactions';
+
     protected $description = 'Remove test transactions for year filtering';
 
     public function handle()

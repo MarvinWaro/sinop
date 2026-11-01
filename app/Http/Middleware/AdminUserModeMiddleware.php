@@ -12,8 +12,7 @@ class AdminUserModeMiddleware
      * Handle an incoming request.
      * Prevent admin users in user mode from accessing admin functions
      *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
+     * @param  Closure(Request): (Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {

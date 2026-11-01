@@ -22,7 +22,7 @@ class Supply extends Model
         'category_id',
         'reorder_point',
         'acquisition_cost',
-        'is_active'
+        'is_active',
     ];
 
     protected $casts = [

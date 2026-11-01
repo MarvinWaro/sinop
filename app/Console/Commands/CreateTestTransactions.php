@@ -11,6 +11,7 @@ use Illuminate\Console\Command;
 class CreateTestTransactions extends Command
 {
     protected $signature = 'app:create-test-transactions';
+
     protected $description = 'Create test transactions for year filtering';
 
     public function handle()
@@ -18,8 +19,9 @@ class CreateTestTransactions extends Command
         // Get the supply
         $supply = Supply::first();
 
-        if (!$supply) {
+        if (! $supply) {
             $this->error('No supplies found in the database!');
+
             return 1;
         }
 
@@ -62,14 +64,14 @@ class CreateTestTransactions extends Command
                 $this->info("Updated balance after deletion: {$currentBalance}");
             } else {
                 $currentBalance = 0;
-                $this->info("No transactions remaining, balance reset to 0");
+                $this->info('No transactions remaining, balance reset to 0');
             }
         }
 
         // 2024 Transactions
 
         // Transaction 1 (2024 receipt)
-        $transaction1 = new SupplyTransaction();
+        $transaction1 = new SupplyTransaction;
         $transaction1->supply_id = $supply->supply_id;
         $transaction1->transaction_type = 'receipt';
         $transaction1->transaction_date = Carbon::createFromDate(2024, 5, 1);
@@ -86,7 +88,7 @@ class CreateTestTransactions extends Command
         $this->info("Transaction 1 saved (2024-05 receipt). Current balance: {$currentBalance}");
 
         // Transaction 2 (2024 issue)
-        $transaction2 = new SupplyTransaction();
+        $transaction2 = new SupplyTransaction;
         $transaction2->supply_id = $supply->supply_id;
         $transaction2->transaction_type = 'issue';
         $transaction2->transaction_date = Carbon::createFromDate(2024, 6, 15);
@@ -105,7 +107,7 @@ class CreateTestTransactions extends Command
         // 2025 Transactions
 
         // Transaction 3 (2025 receipt)
-        $transaction3 = new SupplyTransaction();
+        $transaction3 = new SupplyTransaction;
         $transaction3->supply_id = $supply->supply_id;
         $transaction3->transaction_type = 'receipt';
         $transaction3->transaction_date = Carbon::createFromDate(2025, 2, 10);
@@ -122,7 +124,7 @@ class CreateTestTransactions extends Command
         $this->info("Transaction 3 saved (2025-02 receipt). Current balance: {$currentBalance}");
 
         // Transaction 4 (2025 issue)
-        $transaction4 = new SupplyTransaction();
+        $transaction4 = new SupplyTransaction;
         $transaction4->supply_id = $supply->supply_id;
         $transaction4->transaction_type = 'issue';
         $transaction4->transaction_date = Carbon::createFromDate(2025, 3, 20);
@@ -141,7 +143,7 @@ class CreateTestTransactions extends Command
         // 2026 Transactions
 
         // Transaction 5 (2026 receipt)
-        $transaction5 = new SupplyTransaction();
+        $transaction5 = new SupplyTransaction;
         $transaction5->supply_id = $supply->supply_id;
         $transaction5->transaction_type = 'receipt';
         $transaction5->transaction_date = Carbon::createFromDate(2026, 4, 5);
@@ -158,7 +160,7 @@ class CreateTestTransactions extends Command
         $this->info("Transaction 5 saved (2026-04 receipt). Current balance: {$currentBalance}");
 
         // Transaction 6 (2026 issue)
-        $transaction6 = new SupplyTransaction();
+        $transaction6 = new SupplyTransaction;
         $transaction6->supply_id = $supply->supply_id;
         $transaction6->transaction_type = 'issue';
         $transaction6->transaction_date = Carbon::createFromDate(2026, 7, 10);
@@ -177,7 +179,7 @@ class CreateTestTransactions extends Command
         // 2027 Transactions
 
         // Transaction 7 (2027 receipt)
-        $transaction7 = new SupplyTransaction();
+        $transaction7 = new SupplyTransaction;
         $transaction7->supply_id = $supply->supply_id;
         $transaction7->transaction_type = 'receipt';
         $transaction7->transaction_date = Carbon::createFromDate(2027, 3, 15);
@@ -194,7 +196,7 @@ class CreateTestTransactions extends Command
         $this->info("Transaction 7 saved (2027-03 receipt). Current balance: {$currentBalance}");
 
         // Transaction 8 (2027 issue)
-        $transaction8 = new SupplyTransaction();
+        $transaction8 = new SupplyTransaction;
         $transaction8->supply_id = $supply->supply_id;
         $transaction8->transaction_type = 'issue';
         $transaction8->transaction_date = Carbon::createFromDate(2027, 6, 22);
@@ -211,7 +213,7 @@ class CreateTestTransactions extends Command
         $this->info("Transaction 8 saved (2027-06 issue). Final balance: {$currentBalance}");
 
         $this->info("\nTest transactions created successfully across 4 years (2024-2027)!");
-        $this->info("To test year filtering, go to:");
+        $this->info('To test year filtering, go to:');
         $this->info("1. /stock-cards/{$supply->supply_id}?year=2024");
         $this->info("2. /stock-cards/{$supply->supply_id}?year=2025");
         $this->info("3. /stock-cards/{$supply->supply_id}?year=2026");

@@ -30,7 +30,7 @@ return new class extends Migration
                 'requester_signature_type',
                 'approver_signature_type',
                 'issuer_signature_type',
-                'receiver_signature_type'
+                'receiver_signature_type',
             ]);
         });
     }

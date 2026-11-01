@@ -14,8 +14,8 @@ class ReferenceNumberService
      */
     public function generateIarNumberForDate(?Carbon $onDate = null): string
     {
-        $date  = $onDate ?: Carbon::now();
-        $year  = $date->format('Y');
+        $date = $onDate ?: Carbon::now();
+        $year = $date->format('Y');
         $month = $date->format('m');
 
         // find last IAR this year‐month
@@ -26,12 +26,12 @@ class ReferenceNumberService
 
         $next = 1;
         if ($last) {
-            $parts     = explode('-', $last->reference_no);
-            $lastNum   = intval($parts[2] ?? 0);
-            $next      = $lastNum + 1;
+            $parts = explode('-', $last->reference_no);
+            $lastNum = intval($parts[2] ?? 0);
+            $next = $lastNum + 1;
         }
 
-        return sprintf("IAR %s-%s-%03d", $year, $month, $next);
+        return sprintf('IAR %s-%s-%03d', $year, $month, $next);
     }
 
     /**
@@ -65,7 +65,7 @@ class ReferenceNumberService
             $nextNumber = '001';
         }
 
-        return $prefix . $nextNumber;
+        return $prefix.$nextNumber;
     }
 
     /**
@@ -90,6 +90,7 @@ class ReferenceNumberService
     public function isNewYear(): bool
     {
         $today = Carbon::now();
+
         return $today->month == 1 && $today->day <= 15;
     }
 }
