@@ -419,15 +419,18 @@ html.theme-notion :is(h1, h2) {
 }
 
 /* The sidebar stays put while the page fades, so its notch glides in view. */
-::view-transition-group(app-sidebar) {
+::view-transition-group(app-sidebar),
+::view-transition-group(mobile-tab-bar) {
     animation-duration: 0s;
 }
 
-::view-transition-old(app-sidebar) {
+::view-transition-old(app-sidebar),
+::view-transition-old(mobile-tab-bar) {
     display: none;
 }
 
-::view-transition-new(app-sidebar) {
+::view-transition-new(app-sidebar),
+::view-transition-new(mobile-tab-bar) {
     animation: none;
 }
 

@@ -37,6 +37,7 @@ import {
     update,
 } from '@/routes/supplies';
 import type { Category, Paginated, Supply } from '@/types';
+import { useOpenOnArrival } from '@/lib/open-on-arrival';
 
 type Props = {
     categories: Category[];
@@ -69,6 +70,11 @@ export default function SuppliesIndex({
     const can = useCan();
     const [editing, setEditing] = useState<Supply | 'new' | null>(null);
     const [deleting, setDeleting] = useState<Supply | null>(null);
+    // The phone tab bar's "Add supply" opens the form on arrival.
+    useOpenOnArrival(
+        'new-supply',
+        () => can('supplies.create') && setEditing('new'),
+    );
     const [deleteProcessing, setDeleteProcessing] = useState(false);
 
     const confirmDelete = () => {
