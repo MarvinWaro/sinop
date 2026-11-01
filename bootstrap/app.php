@@ -25,6 +25,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ['middleware' => ['web', 'auth']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // In production Coolify's proxy ends HTTPS and forwards plain HTTP:
+        // trust its X-Forwarded-* headers so links and redirects stay https.
+        $middleware->trustProxies(at: '*');
+
         $middleware->encryptCookies(except: ['appearance', 'public_appearance', 'sidebar_state']);
 
         $middleware->web(append: [

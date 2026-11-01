@@ -1,0 +1,50 @@
+# Only what the image needs. Secrets and local state never go in.
+.git
+.github
+.env
+.env.*
+!.env.example
+*.md
+!resources/**/*.md
+
+# Rebuilt inside the image
+node_modules
+vendor
+public/build
+public/hot
+public/storage
+public/fonts-manifest.dev.json
+bootstrap/ssr
+bootstrap/cache/*.php
+resources/js/actions
+resources/js/routes
+resources/js/wayfinder
+
+# Local runtime files
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/testing/*
+storage/framework/views/*
+storage/app/private/*
+storage/app/public/*
+storage/pail
+storage/*.key
+database/*.sqlite
+state
+
+# Tests and tooling
+tests
+.phpunit.cache
+.phpunit.result.cache
+phpunit.xml
+phpstan.neon
+pint.json
+.editorconfig
+.idea
+.vscode
+.claude
+.agents
+.cursor
+.mcp.json
+boost.json
