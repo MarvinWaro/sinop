@@ -4,8 +4,6 @@ namespace App\Models;
 
 use App\Enums\ActivityModule;
 use App\Models\Concerns\LogsActivity;
-use App\Models\Supply;
-
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 

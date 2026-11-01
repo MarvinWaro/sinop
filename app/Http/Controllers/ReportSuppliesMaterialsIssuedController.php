@@ -2,33 +2,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Department;
+use App\Models\RisSlip;
 use App\Models\Supply;
 use App\Models\SupplyTransaction;
-use App\Models\RisSlip;
-use App\Models\RisItem;
-use App\Models\Department;
-use App\Models\SupplyStock;
 use App\Services\RsmiAnalyticsService;
 use App\Support\ExcelDownload;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use Inertia\Inertia;
-
-
 // Add this to your imports at the top of your controller
+use PhpOffice\PhpSpreadsheet\RichText\RichText;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
 
-use PhpOffice\PhpSpreadsheet\RichText\RichText;
-use PhpOffice\PhpSpreadsheet\RichText\Run;
-
 class ReportSuppliesMaterialsIssuedController extends Controller
 {
-
     public function index(Request $request)
     {
         $selectedMonth = $request->get('month', Carbon::now()->format('Y-m'));
@@ -81,7 +74,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'available_months_count' => $availableMonths->count(),
             'fund_clusters_count' => $fundClusters->count(),
             'selected_month' => $selectedMonth,
-            'selected_fund_cluster' => $selectedFundCluster ?? 'All'
+            'selected_fund_cluster' => $selectedFundCluster ?? 'All',
         ]);
 
         return Inertia::render('rsmi/index', [
@@ -100,7 +93,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $validated = $request->validate([
             'month' => 'nullable|date_format:Y-m',
             'fund_cluster' => 'nullable|in:101,151',
-            'department_id' => 'nullable|exists:departments,id'
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $month = $validated['month'] ?? Carbon::now()->format('Y-m');
@@ -108,8 +101,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $fundCluster = $validated['fund_cluster'] ?? null; // null = All Fund Clusters
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // Get filter data for the inline filters
         $availableMonths = RisSlip::where('status', 'posted')
@@ -146,7 +139,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         // Apply fund cluster filter only if specified
         if ($fundCluster) {
             // Filter by specific fund cluster
-            $transactionsQuery->whereIn('reference_no', function($query) use ($fundCluster) {
+            $transactionsQuery->whereIn('reference_no', function ($query) use ($fundCluster) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('fund_cluster', $fundCluster)
@@ -155,7 +148,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             });
         } else {
             // "All Fund Clusters" - filter by any posted RIS slip
-            $transactionsQuery->whereIn('reference_no', function($query) {
+            $transactionsQuery->whereIn('reference_no', function ($query) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('status', 'posted')
@@ -180,7 +173,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $transactionsWithCorrectCost = $this->calculateCorrectUnitCosts($transactions, $fundCluster);
 
         // Group by RIS number with fund cluster information
-        $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function($items, $risNo) use ($risSlips) {
+        $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function ($items, $risNo) use ($risSlips) {
             $firstItem = $items->first();
             $risSlip = $risSlips->get($risNo);
 
@@ -189,7 +182,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                 'fund_cluster' => $risSlip ? $risSlip->fund_cluster : null, // Include fund cluster info
                 'department' => 'CHEDRO XII', // Use constant responsibility center code
                 'issued_date' => $firstItem->transaction_date,
-                'items' => $items->map(function($item) {
+                'items' => $items->map(function ($item) {
                     return [
                         'stock_no' => $item->supply->stock_no,
                         'item_name' => $item->supply->item_name,
@@ -197,9 +190,9 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                         'unit' => $item->supply->unit_of_measurement,
                         'quantity_issued' => $item->quantity,
                         'unit_cost' => $item->corrected_unit_cost, // Use corrected unit cost
-                        'total_cost' => $item->corrected_total_cost // Use corrected total cost
+                        'total_cost' => $item->corrected_total_cost, // Use corrected total cost
                     ];
-                })
+                }),
             ];
         })->sortKeys(); // Sort by RIS number (ascending)
 
@@ -210,7 +203,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'unique_supplies' => $transactionsWithCorrectCost->pluck('supply_id')->unique()->count(),
             'departments_served' => $transactionsWithCorrectCost->pluck('department_id')->unique()->count(),
             'ris_count' => $transactionsWithCorrectCost->pluck('reference_no')->unique()->count(),
-            'fund_clusters_used' => $risSlips->pluck('fund_cluster')->filter()->unique()->sort()->values()
+            'fund_clusters_used' => $risSlips->pluck('fund_cluster')->filter()->unique()->sort()->values(),
         ];
 
         // Get entity information
@@ -223,7 +216,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'department_id' => $departmentId,
             'total_transactions' => $transactionsWithCorrectCost->count(),
             'total_ris' => $reportData->count(),
-            'fund_clusters_used' => $summary['fund_clusters_used']->toArray()
+            'fund_clusters_used' => $summary['fund_clusters_used']->toArray(),
         ]);
 
         return Inertia::render('rsmi/report', [
@@ -241,7 +234,6 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         ]);
     }
 
-
     private function calculateCorrectUnitCosts($transactions, $fundCluster)
     {
         return app(RsmiAnalyticsService::class)->correctUnitCosts($transactions, $fundCluster);
@@ -253,7 +245,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $validated = $request->validate([
             'month' => 'nullable|date_format:Y-m',
             'fund_cluster' => 'nullable|in:101,151',
-            'department_id' => 'nullable|exists:departments,id'
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $month = $validated['month'] ?? Carbon::now()->format('Y-m');
@@ -261,13 +253,13 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $departmentId = $validated['department_id'] ?? null;
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // Get available months for the dropdown (from posted RIS slips)
         $availableMonths = RisSlip::where('status', 'posted')
             ->whereNotNull('issued_at')
-            ->whereHas('items', function($query) {
+            ->whereHas('items', function ($query) {
                 $query->where('quantity_issued', '>', 0);
             })
             ->selectRaw('DATE_FORMAT(ris_date, "%Y-%m") as month')
@@ -302,7 +294,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
 
         // FIXED: Filter by RIS slip fund cluster instead of supply stock fund cluster
         if ($fundCluster) {
-            $transactionsQuery->whereIn('reference_no', function($query) use ($fundCluster) {
+            $transactionsQuery->whereIn('reference_no', function ($query) use ($fundCluster) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('fund_cluster', $fundCluster)
@@ -311,7 +303,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             });
         } else {
             // If no fund cluster specified, still filter by posted RIS slips
-            $transactionsQuery->whereIn('reference_no', function($query) {
+            $transactionsQuery->whereIn('reference_no', function ($query) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('status', 'posted')
@@ -336,14 +328,15 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             ->keyBy('ris_no');
 
         // Group by supply and include fund cluster information
-        $reportData = $transactionsWithCorrectCost->groupBy('supply_id')->map(function($items) use ($risSlips) {
+        $reportData = $transactionsWithCorrectCost->groupBy('supply_id')->map(function ($items) use ($risSlips) {
             $supply = $items->first()->supply;
             $totalQuantity = $items->sum('quantity');
             $totalCost = $items->sum('corrected_total_cost'); // Use corrected cost
 
             // Map transactions with fund cluster information
-            $transactionData = $items->map(function($item) use ($risSlips) {
+            $transactionData = $items->map(function ($item) use ($risSlips) {
                 $risSlip = $risSlips->get($item->reference_no);
+
                 return [
                     'ris_no' => $item->reference_no,
                     'fund_cluster' => $risSlip ? $risSlip->fund_cluster : null,
@@ -351,7 +344,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                     'date' => $item->transaction_date,
                     'quantity' => $item->quantity,
                     'unit_cost' => $item->corrected_unit_cost, // Use corrected cost
-                    'total' => $item->corrected_total_cost // Use corrected cost
+                    'total' => $item->corrected_total_cost, // Use corrected cost
                 ];
             });
 
@@ -365,7 +358,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                 'total_quantity' => $totalQuantity,
                 'average_unit_cost' => $totalQuantity > 0 ? $totalCost / $totalQuantity : 0,
                 'total_cost' => $totalCost,
-                'transactions' => $transactionData
+                'transactions' => $transactionData,
             ];
         })->sortBy('stock_no')->values();
 
@@ -382,7 +375,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'total_supplies' => $reportData->count(),
             'total_transactions' => $transactionsWithCorrectCost->count(),
             'available_months_count' => $availableMonths->count(),
-            'fund_clusters_count' => $fundClusters->count()
+            'fund_clusters_count' => $fundClusters->count(),
         ]);
 
         return Inertia::render('rsmi/detailed', [
@@ -404,28 +397,29 @@ class ReportSuppliesMaterialsIssuedController extends Controller
     {
         // UPDATED: Use corrected costs for all calculations
         // 1. Category-wise distribution
-        $categoryData = $transactions->groupBy('supply.category.name')->map(function($items, $category) {
+        $categoryData = $transactions->groupBy('supply.category.name')->map(function ($items, $category) {
             return [
                 'category' => $category ?: 'Uncategorized',
                 'total_cost' => $items->sum('corrected_total_cost'),
                 'item_count' => $items->count(),
-                'unique_items' => $items->pluck('supply_id')->unique()->count()
+                'unique_items' => $items->pluck('supply_id')->unique()->count(),
             ];
         })->sortByDesc('total_cost')->values();
 
         // 2. Top 10 most expensive items
-        $topExpensiveItems = $transactions->groupBy('supply_id')->map(function($items) {
+        $topExpensiveItems = $transactions->groupBy('supply_id')->map(function ($items) {
             $supply = $items->first()->supply;
+
             return [
                 'item_name' => $supply->item_name ?? 'Unknown Item',
                 'stock_no' => $supply->stock_no ?? 'N/A',
                 'total_cost' => $items->sum('corrected_total_cost'),
-                'quantity' => $items->sum('quantity')
+                'quantity' => $items->sum('quantity'),
             ];
         })->sortByDesc('total_cost')->take(10)->values();
 
         // 3. OPTION 4: Supply Efficiency Analysis - Cost per transaction and frequency
-        $supplyEfficiency = $transactions->groupBy('supply_id')->map(function($items) {
+        $supplyEfficiency = $transactions->groupBy('supply_id')->map(function ($items) {
             $supply = $items->first()->supply;
             $totalCost = $items->sum('corrected_total_cost');
             $totalQuantity = $items->sum('quantity');
@@ -440,34 +434,34 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                 'avg_cost_per_transaction' => $transactionCount > 0 ? $totalCost / $transactionCount : 0,
                 'cost_per_unit' => $totalQuantity > 0 ? $totalCost / $totalQuantity : 0,
                 'efficiency_score' => $transactionCount > 0 && $totalQuantity > 0 ?
-                    ($totalQuantity / $transactionCount) / ($totalCost / $transactionCount) * 1000 : 0
+                    ($totalQuantity / $transactionCount) / ($totalCost / $transactionCount) * 1000 : 0,
             ];
-        })->filter(function($item) {
+        })->filter(function ($item) {
             return $item['transaction_frequency'] >= 1; // Include all items used at least once
         })->sortByDesc('efficiency_score')->take(15)->values();
 
         // 4. Department-wise distribution
-        $departmentData = $transactions->groupBy('department.name')->map(function($items, $department) {
+        $departmentData = $transactions->groupBy('department.name')->map(function ($items, $department) {
             return [
                 'department' => $department ?: 'N/A',
                 'total_cost' => $items->sum('corrected_total_cost'),
                 'item_count' => $items->count(),
-                'unique_items' => $items->pluck('supply_id')->unique()->count()
+                'unique_items' => $items->pluck('supply_id')->unique()->count(),
             ];
         })->sortByDesc('total_cost')->values();
 
         // 5. RIS-wise summary
-        $risData = $transactions->groupBy('reference_no')->map(function($items, $risNo) {
+        $risData = $transactions->groupBy('reference_no')->map(function ($items, $risNo) {
             return [
                 'ris_no' => $risNo,
                 'total_cost' => $items->sum('corrected_total_cost'),
                 'item_count' => $items->count(),
-                'date' => $items->first()->transaction_date
+                'date' => $items->first()->transaction_date,
             ];
         })->sortByDesc('total_cost')->take(10)->values();
 
         // 6. Unit cost analysis
-        $unitCostAnalysis = $transactions->groupBy('supply_id')->map(function($items) {
+        $unitCostAnalysis = $transactions->groupBy('supply_id')->map(function ($items) {
             $supply = $items->first()->supply;
             $costs = $items->pluck('corrected_unit_cost')->filter();
 
@@ -483,9 +477,10 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                     'max_cost' => $maxCost,
                     'min_cost' => $minCost,
                     'cost_variance' => $variance,
-                    'total_quantity' => $items->sum('quantity')
+                    'total_quantity' => $items->sum('quantity'),
                 ];
             }
+
             return null;
         })->filter()->where('cost_variance', '>', 0)->sortByDesc('cost_variance')->take(10)->values();
 
@@ -503,8 +498,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'highest_single_transaction' => $transactions->max('corrected_total_cost') ?? 0,
             'date_range' => [
                 'start' => $startDate->format('M d, Y'),
-                'end' => $endDate->format('M d, Y')
-            ]
+                'end' => $endDate->format('M d, Y'),
+            ],
         ];
 
         return [
@@ -514,7 +509,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'departments' => $departmentData,
             'ris_summary' => $risData,
             'unit_cost_analysis' => $unitCostAnalysis,
-            'summary_stats' => $summaryStats
+            'summary_stats' => $summaryStats,
         ];
     }
 
@@ -526,8 +521,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $format = $request->get('format', 'standard'); // standard or detailed
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // Get the data based on format
         if ($format === 'detailed') {
@@ -535,7 +530,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             $transactionsQuery = SupplyTransaction::with(['supply.category', 'department'])
                 ->where('transaction_type', 'issue')
                 ->whereBetween('transaction_date', [$startDate, $endDate])
-                ->whereHas('supply.stocks', function($q) use ($fundCluster) {
+                ->whereHas('supply.stocks', function ($q) use ($fundCluster) {
                     $q->where('fund_cluster', $fundCluster);
                 });
 
@@ -549,7 +544,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             $transactionsWithCorrectCost = $this->calculateCorrectUnitCosts($transactions, $fundCluster);
 
             // Group by supply for detailed report
-            $reportData = $transactionsWithCorrectCost->groupBy('supply_id')->map(function($items) {
+            $reportData = $transactionsWithCorrectCost->groupBy('supply_id')->map(function ($items) {
                 $supply = $items->first()->supply;
                 $totalQuantity = $items->sum('quantity');
                 $totalCost = $items->sum('corrected_total_cost');
@@ -560,7 +555,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                     'unit' => $supply->unit_of_measurement,
                     'total_quantity' => $totalQuantity,
                     'average_unit_cost' => $totalQuantity > 0 ? $totalCost / $totalQuantity : 0,
-                    'total_cost' => $totalCost
+                    'total_cost' => $totalCost,
                 ];
             })->sortBy('stock_no');
 
@@ -570,7 +565,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             $transactionsQuery = SupplyTransaction::with(['supply.category', 'department'])
                 ->where('transaction_type', 'issue')
                 ->whereBetween('transaction_date', [$startDate, $endDate])
-                ->whereHas('supply.stocks', function($q) use ($fundCluster) {
+                ->whereHas('supply.stocks', function ($q) use ($fundCluster) {
                     $q->where('fund_cluster', $fundCluster);
                 });
 
@@ -584,21 +579,22 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             $transactionsWithCorrectCost = $this->calculateCorrectUnitCosts($transactions, $fundCluster);
 
             // Group by RIS for standard report
-            $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function($items, $risNo) {
+            $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function ($items, $risNo) {
                 $firstItem = $items->first();
+
                 return [
                     'ris_no' => $risNo,
                     'department' => 'CHEDRO XII', // Use constant responsibility center code
-                    'items' => $items->map(function($item) {
+                    'items' => $items->map(function ($item) {
                         return [
                             'stock_no' => $item->supply->stock_no,
                             'item_name' => $item->supply->item_name,
                             'unit' => $item->supply->unit_of_measurement,
                             'quantity_issued' => $item->quantity,
                             'unit_cost' => $item->corrected_unit_cost,
-                            'total_cost' => $item->corrected_total_cost
+                            'total_cost' => $item->corrected_total_cost,
                         ];
-                    })
+                    }),
                 ];
             })->sortKeys(); // Sort by RIS number (ascending)
 
@@ -620,6 +616,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $pdf->setPaper('legal', 'landscape');
 
         $filename = "rsmi-{$month}-{$fundCluster}.pdf";
+
         return $pdf->download($filename);
     }
 
@@ -637,7 +634,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             // FIXED: Filter by RIS slip fund cluster instead of supply stock fund cluster
             $transactions = SupplyTransaction::where('transaction_type', 'issue')
                 ->whereBetween('transaction_date', [$startDate, $endDate])
-                ->whereIn('reference_no', function($query) use ($fundCluster) {
+                ->whereIn('reference_no', function ($query) use ($fundCluster) {
                     $query->select('ris_no')
                         ->from('ris_slips')
                         ->where('fund_cluster', $fundCluster)
@@ -652,7 +649,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
 
             $monthlyData->push([
                 'month' => $startDate->format('F'),
-                'total' => $monthlyTotal
+                'total' => $monthlyTotal,
             ]);
         }
 
@@ -669,14 +666,14 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $fundCluster = $request->get('fund_cluster', '101');
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // Get all transactions for the period
         $transactions = SupplyTransaction::with(['supply.category'])
             ->where('transaction_type', 'issue')
             ->whereBetween('transaction_date', [$startDate, $endDate])
-            ->whereHas('supply.stocks', function($q) use ($fundCluster) {
+            ->whereHas('supply.stocks', function ($q) use ($fundCluster) {
                 $q->where('fund_cluster', $fundCluster);
             })
             ->get();
@@ -685,7 +682,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $transactionsWithCorrectCost = $this->calculateCorrectUnitCosts($transactions, $fundCluster);
 
         // Group by stock number and calculate totals
-        $summaryData = $transactionsWithCorrectCost->groupBy('supply.stock_no')->map(function($items) {
+        $summaryData = $transactionsWithCorrectCost->groupBy('supply.stock_no')->map(function ($items) {
             $supply = $items->first()->supply;
             $totalQuantity = $items->sum('quantity');
             $totalCost = $items->sum('corrected_total_cost');
@@ -715,6 +712,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $pdf->setPaper('legal', 'landscape');
 
         $filename = "rsmi-summary-{$month}-{$fundCluster}.pdf";
+
         return $pdf->download($filename);
     }
 
@@ -724,7 +722,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $validated = $request->validate([
             'month' => 'nullable|date_format:Y-m',
             'fund_cluster' => 'nullable|in:101,151',
-            'department_id' => 'nullable|exists:departments,id'
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $month = $validated['month'] ?? Carbon::now()->format('Y-m');
@@ -732,8 +730,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $fundCluster = $validated['fund_cluster'] ?? null; // Allow null for "All Fund Clusters"
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // FIXED: Get all issued items from transactions with proper fund cluster filtering
         $transactionsQuery = SupplyTransaction::with(['supply.category', 'department'])
@@ -743,7 +741,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         // FIXED: Filter by RIS slip fund cluster instead of supply stock fund cluster
         if ($fundCluster) {
             // Filter by specific fund cluster
-            $transactionsQuery->whereIn('reference_no', function($query) use ($fundCluster) {
+            $transactionsQuery->whereIn('reference_no', function ($query) use ($fundCluster) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('fund_cluster', $fundCluster)
@@ -752,7 +750,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             });
         } else {
             // "All Fund Clusters" - filter by any posted RIS slip
-            $transactionsQuery->whereIn('reference_no', function($query) {
+            $transactionsQuery->whereIn('reference_no', function ($query) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('status', 'posted')
@@ -782,7 +780,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'department_id' => $departmentId,
             'transactions_count' => $transactionsWithCorrectCost->count(),
             'categories_count' => $analyticsData['categories']->count(),
-            'departments_count' => $analyticsData['departments']->count()
+            'departments_count' => $analyticsData['departments']->count(),
         ]);
 
         return Inertia::render('rsmi/analytics', [
@@ -819,22 +817,22 @@ class ReportSuppliesMaterialsIssuedController extends Controller
 
     public function exportPdfFormatted(Request $request)
     {
-        $month        = $request->get('month', Carbon::now()->format('Y-m'));
+        $month = $request->get('month', Carbon::now()->format('Y-m'));
         $departmentId = $request->get('department_id');
-        $fundCluster  = $request->get('fund_cluster', '101');
+        $fundCluster = $request->get('fund_cluster', '101');
 
         // Parse month
         $startDate = Carbon::parse("{$month}-01")->startOfMonth();
-        $endDate   = Carbon::parse("{$month}-01")->endOfMonth();
+        $endDate = Carbon::parse("{$month}-01")->endOfMonth();
 
         // Pull transactions
         $transactionsQuery = SupplyTransaction::with(['supply', 'department'])
-            ->where('transaction_type','issue')
+            ->where('transaction_type', 'issue')
             ->whereBetween('transaction_date', [$startDate, $endDate])
-            ->whereHas('supply.stocks', fn($q) => $q->where('fund_cluster',$fundCluster));
+            ->whereHas('supply.stocks', fn ($q) => $q->where('fund_cluster', $fundCluster));
 
         if ($departmentId) {
-            $transactionsQuery->where('department_id',$departmentId);
+            $transactionsQuery->where('department_id', $departmentId);
         }
 
         $transactions = $transactionsQuery->get();
@@ -845,25 +843,25 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         // Group by RIS number
         $reportData = $transactionsWithCorrectCost
             ->groupBy('reference_no')
-            ->map(fn($items, $risNo) => [
-                'ris_no'       => $risNo,
-                'department'   => 'CHEDRO XII',
-                'issued_date'  => $items->first()->transaction_date,
-                'items'        => $items->map(fn($tx) => [
-                    'stock_no'        => $tx->supply->stock_no,
+            ->map(fn ($items, $risNo) => [
+                'ris_no' => $risNo,
+                'department' => 'CHEDRO XII',
+                'issued_date' => $items->first()->transaction_date,
+                'items' => $items->map(fn ($tx) => [
+                    'stock_no' => $tx->supply->stock_no,
                     // **combine name + description here**:
-                    'item_name'       => trim(
-                                            $tx->supply->item_name
-                                            . (
-                                                $tx->supply->description
-                                                ? ', '.$tx->supply->description
-                                                : ''
-                                            )
-                                        ),
-                    'unit'            => $tx->supply->unit_of_measurement,
+                    'item_name' => trim(
+                        $tx->supply->item_name
+                        .(
+                            $tx->supply->description
+                            ? ', '.$tx->supply->description
+                            : ''
+                        )
+                    ),
+                    'unit' => $tx->supply->unit_of_measurement,
                     'quantity_issued' => $tx->quantity,
-                    'unit_cost'       => $tx->corrected_unit_cost,
-                    'total_cost'      => $tx->corrected_total_cost,
+                    'unit_cost' => $tx->corrected_unit_cost,
+                    'total_cost' => $tx->corrected_total_cost,
                 ]),
             ])
             ->sortKeys();
@@ -873,16 +871,17 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         // Render PDF
         $pdf = app('dompdf.wrapper');
         $pdf->loadView('rsmi.pdf-formatted', compact(
-            'reportData','month','startDate','endDate','entityName','fundCluster'
+            'reportData', 'month', 'startDate', 'endDate', 'entityName', 'fundCluster'
         ));
-        $pdf->setPaper('legal','landscape');
+        $pdf->setPaper('legal', 'landscape');
         $pdf->setOptions([
             'isHtml5ParserEnabled' => true,
-            'isRemoteEnabled'      => true,
-            'defaultFont'          => 'Arial'
+            'isRemoteEnabled' => true,
+            'defaultFont' => 'Arial',
         ]);
 
-        $filename = "RSMI-".strtoupper($startDate->format('F-Y'))."-FC{$fundCluster}.pdf";
+        $filename = 'RSMI-'.strtoupper($startDate->format('F-Y'))."-FC{$fundCluster}.pdf";
+
         return $pdf->download($filename);
     }
 
@@ -892,7 +891,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $validated = $request->validate([
             'month' => 'nullable|date_format:Y-m',
             'fund_cluster' => 'nullable|in:101,151',
-            'department_id' => 'nullable|exists:departments,id'
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $month = $validated['month'] ?? Carbon::now()->format('Y-m');
@@ -900,8 +899,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $fundCluster = $validated['fund_cluster'] ?? null; // null = All Fund Clusters
 
         // Parse month
-        $startDate = Carbon::parse($month . '-01')->startOfMonth();
-        $endDate = Carbon::parse($month . '-01')->endOfMonth();
+        $startDate = Carbon::parse($month.'-01')->startOfMonth();
+        $endDate = Carbon::parse($month.'-01')->endOfMonth();
 
         // FIXED: Get transactions with proper RIS slip fund cluster filtering
         $transactionsQuery = SupplyTransaction::with(['supply', 'department'])
@@ -911,7 +910,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         // FIXED: Apply fund cluster filter by RIS slip fund cluster, not supply stock fund cluster
         if ($fundCluster) {
             // Filter by specific fund cluster
-            $transactionsQuery->whereIn('reference_no', function($query) use ($fundCluster) {
+            $transactionsQuery->whereIn('reference_no', function ($query) use ($fundCluster) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('fund_cluster', $fundCluster)
@@ -920,7 +919,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             });
         } else {
             // "All Fund Clusters" - filter by any posted RIS slip
-            $transactionsQuery->whereIn('reference_no', function($query) {
+            $transactionsQuery->whereIn('reference_no', function ($query) {
                 $query->select('ris_no')
                     ->from('ris_slips')
                     ->where('status', 'posted')
@@ -945,19 +944,20 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             ->keyBy('ris_no');
 
         // Group by RIS number with fund cluster information
-        $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function($items, $risNo) use ($risSlips) {
+        $reportData = $transactionsWithCorrectCost->groupBy('reference_no')->map(function ($items, $risNo) use ($risSlips) {
             $risSlip = $risSlips->get($risNo);
+
             return [
                 'ris_no' => $risNo,
                 'fund_cluster' => $risSlip ? $risSlip->fund_cluster : null,
                 'department' => 'CHEDRO XII',
                 'issued_date' => $items->first()->transaction_date,
-                'items' => $items->map(function($tx) {
+                'items' => $items->map(function ($tx) {
                     return [
                         'stock_no' => $tx->supply->stock_no,
                         'item_name' => trim(
-                            $tx->supply->item_name .
-                            ($tx->supply->description ? ', ' . $tx->supply->description : '')
+                            $tx->supply->item_name.
+                            ($tx->supply->description ? ', '.$tx->supply->description : '')
                         ),
                         'unit' => $tx->supply->unit_of_measurement,
                         'quantity_issued' => $tx->quantity,
@@ -971,7 +971,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $entityName = 'COMMISSION ON HIGHER EDUCATION REGIONAL OFFICE XII';
 
         // Create Excel file
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         // Set page setup
@@ -1031,11 +1031,11 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['italic' => true, 'size' => 10],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER
+                'vertical' => Alignment::VERTICAL_CENTER,
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         // Right instruction: "To be filled up by the Accounting Division/Unit" (G-H merged)
@@ -1045,24 +1045,24 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['italic' => true, 'size' => 10],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
-                'vertical' => Alignment::VERTICAL_CENTER
+                'vertical' => Alignment::VERTICAL_CENTER,
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         // Main table headers (immediately after instructions - row 9)
         $currentRow = 9;
         $headers = [
-            'A' => "RIS No.",
+            'A' => 'RIS No.',
             'B' => "Responsibility\nCenter Code",
-            'C' => "Stock No.",
-            'D' => "Item",
-            'E' => "Unit",
+            'C' => 'Stock No.',
+            'D' => 'Item',
+            'E' => 'Unit',
             'F' => "Quantity\nIssued",
-            'G' => "Unit Cost",
-            'H' => "Amount"
+            'G' => 'Unit Cost',
+            'H' => 'Amount',
         ];
 
         foreach ($headers as $col => $header) {
@@ -1076,15 +1076,15 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
         $sheet->getRowDimension($currentRow)->setRowHeight(30);
 
@@ -1125,7 +1125,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
 
                 // Build recap data
                 $stockNo = $item['stock_no'];
-                if (!isset($recapData[$stockNo])) {
+                if (! isset($recapData[$stockNo])) {
                     $recapData[$stockNo] = [
                         'quantity' => 0,
                         'unit_cost' => $item['unit_cost'],
@@ -1147,12 +1147,12 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['bold' => true],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
         ]);
 
         // Recapitulation - Fixed to match template exactly with correct column positioning
@@ -1166,12 +1166,12 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['bold' => true, 'size' => 11],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Apply border to column A (empty)
@@ -1186,12 +1186,12 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['bold' => true, 'size' => 11],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Headers row
@@ -1209,24 +1209,24 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['bold' => true, 'size' => 10],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         $sheet->getStyle("C{$currentRow}")->applyFromArray([
             'font' => ['bold' => true, 'size' => 10],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Columns D and E - empty with borders
@@ -1242,12 +1242,12 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'font' => ['bold' => true, 'size' => 10],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Data rows
@@ -1276,7 +1276,6 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             $sheet->getStyle("F{$currentRow}")->getNumberFormat()->setFormatCode('#,##0.0000');  // Changed from .00 to .0000
             $sheet->getStyle("G{$currentRow}")->getNumberFormat()->setFormatCode('#,##0.0000');  // Changed from .00 to .0000
 
-
             // Apply borders to all cells in the row
             $sheet->getStyle("B{$currentRow}:C{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
             $sheet->getStyle("F{$currentRow}:H{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
@@ -1303,9 +1302,9 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $sheet->getStyle("F{$currentRow}:H{$currentRow}")->applyFromArray([
             'font' => ['bold' => true],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
             ],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_RIGHT],
         ]);
 
         // Apply special alignment for Total label
@@ -1315,14 +1314,14 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $currentRow++; // Just move one row down from the total row
 
         // Left signature box (A-D)
-        $sheet->mergeCells("A{$currentRow}:D" . ($currentRow + 6));
+        $sheet->mergeCells("A{$currentRow}:D".($currentRow + 6));
 
         // Add the certification text with actual name
-        $certRichText = new RichText();
+        $certRichText = new RichText;
         $certRichText->createText("I hereby certify to the correctness of the above information.\n\n\n");
 
         // Underlined name part
-        $underlined = $certRichText->createTextRun("ALEA MARIE P. DELOSO");
+        $underlined = $certRichText->createTextRun('ALEA MARIE P. DELOSO');
         $underlined->getFont()->setUnderline(true)->setBold(true);
 
         // Add the title below the name
@@ -1333,30 +1332,30 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             ->setHorizontal(Alignment::HORIZONTAL_CENTER)
             ->setVertical(Alignment::VERTICAL_TOP)
             ->setWrapText(true);
-        $sheet->getStyle("A{$currentRow}:D" . ($currentRow + 6))->getBorders()
+        $sheet->getStyle("A{$currentRow}:D".($currentRow + 6))->getBorders()
             ->getOutline()->setBorderStyle(Border::BORDER_THIN);
 
         // Column E - empty with border
-        $sheet->getStyle("E{$currentRow}:E" . ($currentRow + 6))->getBorders()
+        $sheet->getStyle("E{$currentRow}:E".($currentRow + 6))->getBorders()
             ->getOutline()->setBorderStyle(Border::BORDER_THIN);
 
         // Right side - "Posted by:" label
-        $sheet->setCellValue("F{$currentRow}", "Posted by:");
+        $sheet->setCellValue("F{$currentRow}", 'Posted by:');
         $sheet->getStyle("F{$currentRow}")->getAlignment()
             ->setHorizontal(Alignment::HORIZONTAL_LEFT)
             ->setVertical(Alignment::VERTICAL_TOP);
 
         // Apply borders to F-H for the entire signature area
-        $sheet->getStyle("F{$currentRow}:H" . ($currentRow + 6))->getBorders()
+        $sheet->getStyle("F{$currentRow}:H".($currentRow + 6))->getBorders()
             ->getOutline()->setBorderStyle(Border::BORDER_THIN);
 
         // Add underlines and text in the right section
         $rightSigRow = $currentRow + 3;
 
         // Merge F-G for the signature line and text
-        $sheet->mergeCells("F{$rightSigRow}:G" . ($rightSigRow + 1));
+        $sheet->mergeCells("F{$rightSigRow}:G".($rightSigRow + 1));
         $sheet->setCellValue("F{$rightSigRow}", "___________________________\nSignature over Printed Name of\nDesignated Accounting Staff");
-        $sheet->getStyle("F{$rightSigRow}:G" . ($rightSigRow + 1))->getAlignment()
+        $sheet->getStyle("F{$rightSigRow}:G".($rightSigRow + 1))->getAlignment()
             ->setHorizontal(Alignment::HORIZONTAL_CENTER)
             ->setVertical(Alignment::VERTICAL_TOP)
             ->setWrapText(true);
@@ -1379,8 +1378,8 @@ class ReportSuppliesMaterialsIssuedController extends Controller
         $sheet->getColumnDimension('H')->setWidth(20);
 
         // Write file with enhanced filename
-        $fundClusterSuffix = $fundCluster ? "_FC{$fundCluster}" : "_AllFC";
-        $filename = 'RSMI_Report_' . $startDate->format('Y_m') . $fundClusterSuffix . '.xlsx';
+        $fundClusterSuffix = $fundCluster ? "_FC{$fundCluster}" : '_AllFC';
+        $filename = 'RSMI_Report_'.$startDate->format('Y_m').$fundClusterSuffix.'.xlsx';
 
         // Log for debugging
         \Log::info('RSMI Excel Export Generated', [
@@ -1389,7 +1388,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
             'department_id' => $departmentId,
             'transactions_count' => $transactionsWithCorrectCost->count(),
             'report_data_count' => $reportData->count(),
-            'filename' => $filename
+            'filename' => $filename,
         ]);
 
         return ExcelDownload::response($spreadsheet, $filename);
@@ -1409,7 +1408,7 @@ class ReportSuppliesMaterialsIssuedController extends Controller
                     'original_unit_cost' => $transaction->unit_cost,
                     'corrected_unit_cost' => $transaction->corrected_unit_cost,
                     'quantity' => $transaction->quantity,
-                    'corrected_total_cost' => $transaction->corrected_total_cost
+                    'corrected_total_cost' => $transaction->corrected_total_cost,
                 ];
             }
         }
@@ -1418,5 +1417,4 @@ class ReportSuppliesMaterialsIssuedController extends Controller
 
         return $verificationLog;
     }
-
 }

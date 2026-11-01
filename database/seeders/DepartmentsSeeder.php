@@ -2,9 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Department;
+use Illuminate\Database\Seeder;
 
 class DepartmentsSeeder extends Seeder
 {
@@ -32,7 +31,6 @@ class DepartmentsSeeder extends Seeder
             'Technical Division',
             'TNHE',
         ];
-
 
         foreach ($departments as $department) {
             Department::create([

@@ -7,12 +7,11 @@ use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
 use App\Services\SupplyCardNavigation;
 use App\Support\ExcelDownload;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use DateTime;
-
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
@@ -35,9 +34,9 @@ class StockCardController extends Controller
                         WHERE supply_stocks.supply_id = supplies.supply_id) as total_stock'));
 
         if ($search) {
-            $suppliesQuery->where(function($q) use ($search) {
+            $suppliesQuery->where(function ($q) use ($search) {
                 $q->where('item_name', 'like', "%{$search}%")
-                ->orWhere('stock_no', 'like', "%{$search}%");
+                    ->orWhere('stock_no', 'like', "%{$search}%");
             });
         }
 
@@ -126,7 +125,7 @@ class StockCardController extends Controller
 
                 return [
                     'value' => $monthInt,
-                    'name' => $monthName
+                    'name' => $monthName,
                 ];
             });
 
@@ -248,7 +247,6 @@ class StockCardController extends Controller
         return $entries;
     }
 
-
     /**
      * Export stock card to PDF
      */
@@ -278,13 +276,12 @@ class StockCardController extends Controller
 
         $filename = "stock-card-{$supply->stock_no}-{$selectedYear}";
         if ($selectedMonth) {
-            $filename .= "-" . str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
+            $filename .= '-'.str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
         }
-        $filename .= ".pdf";
+        $filename .= '.pdf';
 
         return $pdf->download($filename);
     }
-
 
     /**
      * Export stock card to Excel
@@ -306,7 +303,7 @@ class StockCardController extends Controller
 
         $entityName = 'COMMISSION ON HIGHER EDUCATION REGIONAL OFFICE XII';
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_PORTRAIT);
@@ -324,7 +321,7 @@ class StockCardController extends Controller
 
         $currentRow = 5;
 
-        $sheet->setCellValue("A{$currentRow}", "Entity Name:");
+        $sheet->setCellValue("A{$currentRow}", 'Entity Name:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
 
         $sheet->mergeCells("B{$currentRow}:E{$currentRow}");
@@ -332,7 +329,7 @@ class StockCardController extends Controller
         $sheet->getStyle("B{$currentRow}:E{$currentRow}")->getBorders()->getBottom()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("B{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-        $sheet->setCellValue("F{$currentRow}", "Fund Cluster:");
+        $sheet->setCellValue("F{$currentRow}", 'Fund Cluster:');
         $sheet->getStyle("F{$currentRow}")->getFont()->setBold(true);
 
         $sheet->setCellValue("G{$currentRow}", $fundCluster);
@@ -341,33 +338,33 @@ class StockCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Item:");
+        $sheet->setCellValue("A{$currentRow}", 'Item:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:E{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->item_name);
         $sheet->getStyle("A{$currentRow}:E{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("F{$currentRow}", "Stock No.:");
+        $sheet->setCellValue("F{$currentRow}", 'Stock No.:');
         $sheet->getStyle("F{$currentRow}")->getFont()->setBold(true);
         $sheet->setCellValue("G{$currentRow}", $supply->stock_no);
         $sheet->getStyle("F{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Description:");
+        $sheet->setCellValue("A{$currentRow}", 'Description:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:E{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->description);
         $sheet->getStyle("A{$currentRow}:E{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("F{$currentRow}", "Re-order Point:");
+        $sheet->setCellValue("F{$currentRow}", 'Re-order Point:');
         $sheet->getStyle("F{$currentRow}")->getFont()->setBold(true);
         $sheet->setCellValue("G{$currentRow}", $supply->reorder_point);
         $sheet->getStyle("F{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Unit of Measurement:");
+        $sheet->setCellValue("A{$currentRow}", 'Unit of Measurement:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:G{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->unit_of_measurement);
@@ -375,12 +372,12 @@ class StockCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "DATE");
-        $sheet->setCellValue("B{$currentRow}", "REFERENCE");
-        $sheet->setCellValue("C{$currentRow}", "RECEIPT");
+        $sheet->setCellValue("A{$currentRow}", 'DATE');
+        $sheet->setCellValue("B{$currentRow}", 'REFERENCE');
+        $sheet->setCellValue("C{$currentRow}", 'RECEIPT');
         $sheet->mergeCells("D{$currentRow}:E{$currentRow}");
-        $sheet->setCellValue("D{$currentRow}", "ISSUE");
-        $sheet->setCellValue("F{$currentRow}", "BALANCE");
+        $sheet->setCellValue("D{$currentRow}", 'ISSUE');
+        $sheet->setCellValue("F{$currentRow}", 'BALANCE');
         $sheet->setCellValue("G{$currentRow}", "NO. OF DAYS\nTO CONSUME");
 
         $headerRange = "A{$currentRow}:G{$currentRow}";
@@ -389,39 +386,39 @@ class StockCardController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $currentRow++;
 
         $subHeaders = [
-            'A' => "",
-            'B' => "",
-            'C' => "QTY.",
-            'D' => "QTY.",
-            'E' => "OFFICE",
-            'F' => "QTY.",
-            'G' => ""
+            'A' => '',
+            'B' => '',
+            'C' => 'QTY.',
+            'D' => 'QTY.',
+            'E' => 'OFFICE',
+            'F' => 'QTY.',
+            'G' => '',
         ];
 
         foreach ($subHeaders as $col => $header) {
-            if ($header !== "") {
+            if ($header !== '') {
                 $sheet->setCellValue("{$col}{$currentRow}", $header);
             }
         }
 
-        $sheet->mergeCells("A" . ($currentRow - 1) . ":A{$currentRow}");
-        $sheet->mergeCells("B" . ($currentRow - 1) . ":B{$currentRow}");
-        $sheet->mergeCells("F" . ($currentRow - 1) . ":F{$currentRow}");
-        $sheet->mergeCells("G" . ($currentRow - 1) . ":G{$currentRow}");
+        $sheet->mergeCells('A'.($currentRow - 1).":A{$currentRow}");
+        $sheet->mergeCells('B'.($currentRow - 1).":B{$currentRow}");
+        $sheet->mergeCells('F'.($currentRow - 1).":F{$currentRow}");
+        $sheet->mergeCells('G'.($currentRow - 1).":G{$currentRow}");
 
         $subHeaderRange = "A{$currentRow}:G{$currentRow}";
         $sheet->getStyle($subHeaderRange)->applyFromArray([
@@ -429,15 +426,15 @@ class StockCardController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $sheet->getRowDimension($currentRow - 1)->setRowHeight(25);
@@ -487,13 +484,12 @@ class StockCardController extends Controller
         $sheet->getColumnDimension('F')->setWidth(12);
         $sheet->getColumnDimension('G')->setWidth(15);
 
-        $filename = 'Stock_Card_' . $supply->stock_no . '_' . $selectedYear;
+        $filename = 'Stock_Card_'.$supply->stock_no.'_'.$selectedYear;
         if ($selectedMonth) {
-            $filename .= '_' . str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
+            $filename .= '_'.str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
         }
         $filename .= '.xlsx';
 
         return ExcelDownload::response($spreadsheet, $filename);
     }
-
 }

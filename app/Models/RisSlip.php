@@ -2,14 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Constants\RisStatus;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Department;
-use App\Models\User;
-use App\Models\RisItem;
-use App\Constants\RisStatus;
 
 class RisSlip extends Model
 {
@@ -52,24 +49,23 @@ class RisSlip extends Model
     // app/Models/RisSlip.php
 
     protected $casts = [
-        'ris_date'        => 'date:Y-m-d',
-        'approved_at'     => 'datetime',
-        'issued_at'       => 'datetime',
-        'received_at'     => 'datetime',
-        'declined_at'     => 'datetime',
+        'ris_date' => 'date:Y-m-d',
+        'approved_at' => 'datetime',
+        'issued_at' => 'datetime',
+        'received_at' => 'datetime',
+        'declined_at' => 'datetime',
         'manual_entry_at' => 'datetime',
         'is_manual_entry' => 'boolean',
 
         // 🔧 add these so ids are always integers
-        'division'        => 'integer',
-        'requested_by'    => 'integer',
-        'approved_by'     => 'integer',
-        'issued_by'       => 'integer',
-        'received_by'     => 'integer',
-        'declined_by'     => 'integer',
+        'division' => 'integer',
+        'requested_by' => 'integer',
+        'approved_by' => 'integer',
+        'issued_by' => 'integer',
+        'received_by' => 'integer',
+        'declined_by' => 'integer',
         'manual_entry_by' => 'integer',
     ];
-
 
     /**
      * Expose the obfuscated route key so the frontend can build URLs.
@@ -91,6 +87,7 @@ class RisSlip extends Model
 
     // ─── Obfuscate ris_id in URLs (pure PHP, no extensions needed) ───
     private static int $XOR_KEY = 0x5A3C7E19;
+
     private static string $ALPHABET = 'k7MnW3xYqR9vJbZp2HdLf8GmTsK4CaN6hFjDwQr5VcBgXtPyEz';
 
     public static function encodeId(int $id): string
@@ -100,9 +97,10 @@ class RisSlip extends Model
         $result = '';
         $num = $scrambled;
         do {
-            $result = self::$ALPHABET[$num % $base] . $result;
+            $result = self::$ALPHABET[$num % $base].$result;
             $num = intdiv($num, $base);
         } while ($num > 0);
+
         return $result;
     }
 
@@ -117,6 +115,7 @@ class RisSlip extends Model
             }
             $num = $num * $base + $pos;
         }
+
         return $num ^ self::$XOR_KEY;
     }
 
@@ -252,6 +251,7 @@ class RisSlip extends Model
         if ($this->is_manual_entry) {
             return $this->isHistoricalEntry() ? 'Historical Entry' : 'Manual Entry';
         }
+
         return 'User Request';
     }
 
@@ -275,7 +275,7 @@ class RisSlip extends Model
             'fund_cluster' => 'nullable|string|max:20',
             'responsibility_center_code' => 'nullable|string|max:50',
             'purpose' => 'nullable|string|max:1000',
-            'status' => 'required|in:' . implode(',', RisStatus::all()),
+            'status' => 'required|in:'.implode(',', RisStatus::all()),
         ];
 
         if ($isManualEntry) {
@@ -283,7 +283,7 @@ class RisSlip extends Model
                 'required',
                 'date',
                 'before_or_equal:today',
-                'after_or_equal:' . now()->subYears(5)->format('Y-m-d')
+                'after_or_equal:'.now()->subYears(5)->format('Y-m-d'),
             ];
             $rules['requested_by'] = 'required|exists:users,id';
             $rules['reference_source'] = 'nullable|string|max:255';
@@ -343,7 +343,7 @@ class RisSlip extends Model
     public function scopeHistoricalEntries($query)
     {
         return $query->where('is_manual_entry', true)
-                    ->where('ris_date', '<', now()->subWeek());
+            ->where('ris_date', '<', now()->subWeek());
     }
 
     // NEW: Boot method to set manual entry metadata

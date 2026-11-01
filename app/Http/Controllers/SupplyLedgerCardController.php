@@ -7,18 +7,16 @@ use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
 use App\Services\SupplyCardNavigation;
 use App\Support\ExcelDownload;
-use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use DateTime;
-
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
-
 
 class SupplyLedgerCardController extends Controller
 {
@@ -36,9 +34,9 @@ class SupplyLedgerCardController extends Controller
                         WHERE supply_stocks.supply_id = supplies.supply_id) as total_stock'));
 
         if ($search) {
-            $suppliesQuery->where(function($q) use ($search) {
+            $suppliesQuery->where(function ($q) use ($search) {
                 $q->where('item_name', 'like', "%{$search}%")
-                  ->orWhere('stock_no', 'like', "%{$search}%");
+                    ->orWhere('stock_no', 'like', "%{$search}%");
             });
         }
 
@@ -127,7 +125,7 @@ class SupplyLedgerCardController extends Controller
 
                 return [
                     'value' => $monthInt,
-                    'name' => $monthName
+                    'name' => $monthName,
                 ];
             });
 
@@ -221,19 +219,19 @@ class SupplyLedgerCardController extends Controller
         }
 
         $entries[] = [
-            'date'               => $beginningBalanceDate,
-            'reference'          => 'Beginning Balance',
-            'receipt_qty'        => null,
-            'receipt_unit_cost'  => null,
+            'date' => $beginningBalanceDate,
+            'reference' => 'Beginning Balance',
+            'receipt_qty' => null,
+            'receipt_unit_cost' => null,
             'receipt_total_cost' => null,
-            'issue_qty'          => null,
-            'issue_unit_cost'    => null,
-            'issue_total_cost'   => null,
-            'balance_qty'        => $runningBalance,
-            'balance_unit_cost'  => $weightedAverageUnitCost,
+            'issue_qty' => null,
+            'issue_unit_cost' => null,
+            'issue_total_cost' => null,
+            'balance_qty' => $runningBalance,
+            'balance_unit_cost' => $weightedAverageUnitCost,
             'balance_total_cost' => $runningTotalCost,
-            'days_to_consume'    => null,
-            'transaction_id'     => null,
+            'days_to_consume' => null,
+            'transaction_id' => null,
         ];
 
         // Filter transactions for selected period
@@ -244,20 +242,20 @@ class SupplyLedgerCardController extends Controller
         // Process each transaction for the selected period
         foreach ($periodTransactions as $transaction) {
             if ($transaction->transaction_type == 'receipt') {
-                $receiptQty       = $transaction->quantity;
-                $receiptUnitCost  = $transaction->unit_cost;
+                $receiptQty = $transaction->quantity;
+                $receiptUnitCost = $transaction->unit_cost;
                 $receiptTotalCost = $transaction->total_cost;
 
-                $issueQty        = null;
-                $issueUnitCost   = null;
-                $issueTotalCost  = null;
+                $issueQty = null;
+                $issueUnitCost = null;
+                $issueTotalCost = null;
 
-                $runningBalance   += $receiptQty;
+                $runningBalance += $receiptQty;
                 $runningTotalCost += $receiptTotalCost;
 
             } elseif ($transaction->transaction_type == 'issue') {
-                $receiptQty       = null;
-                $receiptUnitCost  = null;
+                $receiptQty = null;
+                $receiptUnitCost = null;
                 $receiptTotalCost = null;
 
                 $issueQty = $transaction->quantity;
@@ -266,19 +264,19 @@ class SupplyLedgerCardController extends Controller
                     ? $runningTotalCost / $runningBalance
                     : 0;
 
-                $issueUnitCost  = $weightedAverageUnitCost;
+                $issueUnitCost = $weightedAverageUnitCost;
                 $issueTotalCost = $issueQty * $issueUnitCost;
 
-                $runningBalance   -= $issueQty;
+                $runningBalance -= $issueQty;
                 $runningTotalCost = max(0, $runningTotalCost - $issueTotalCost);
 
             } else {
-                $receiptQty       = null;
-                $receiptUnitCost  = null;
+                $receiptQty = null;
+                $receiptUnitCost = null;
                 $receiptTotalCost = null;
-                $issueQty         = null;
-                $issueUnitCost    = null;
-                $issueTotalCost   = null;
+                $issueQty = null;
+                $issueUnitCost = null;
+                $issueTotalCost = null;
 
                 $runningBalance = $transaction->balance_quantity;
                 if ($runningBalance > 0 && $transaction->unit_cost) {
@@ -291,27 +289,26 @@ class SupplyLedgerCardController extends Controller
                 : 0;
 
             $entries[] = [
-                'date'               => $transaction->transaction_date->format('Y-m-d'),
-                'reference'          => $transaction->reference_no,
-                'receipt_qty'        => $receiptQty,
-                'receipt_unit_cost'  => $receiptUnitCost,
+                'date' => $transaction->transaction_date->format('Y-m-d'),
+                'reference' => $transaction->reference_no,
+                'receipt_qty' => $receiptQty,
+                'receipt_unit_cost' => $receiptUnitCost,
                 'receipt_total_cost' => $receiptTotalCost,
-                'issue_qty'          => $issueQty,
-                'issue_unit_cost'    => $issueUnitCost,
-                'issue_total_cost'   => $issueTotalCost,
-                'balance_qty'        => $runningBalance,
-                'balance_unit_cost'  => $newWeightedAverage,
+                'issue_qty' => $issueQty,
+                'issue_unit_cost' => $issueUnitCost,
+                'issue_total_cost' => $issueTotalCost,
+                'balance_qty' => $runningBalance,
+                'balance_unit_cost' => $newWeightedAverage,
                 'balance_total_cost' => $runningTotalCost,
-                'days_to_consume'    => $transaction->transaction_type == 'receipt'
+                'days_to_consume' => $transaction->transaction_type == 'receipt'
                     ? ($transaction->days_to_consume ?? null)
                     : null,
-                'transaction_id'     => $transaction->transaction_id,
+                'transaction_id' => $transaction->transaction_id,
             ];
         }
 
         return $entries;
     }
-
 
     /**
      * Export ledger card to PDF
@@ -347,13 +344,12 @@ class SupplyLedgerCardController extends Controller
 
         $filename = "supplies-ledger-card-{$supply->stock_no}-{$selectedYear}";
         if ($selectedMonth) {
-            $filename .= "-" . str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
+            $filename .= '-'.str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
         }
-        $filename .= ".pdf";
+        $filename .= '.pdf';
 
         return $pdf->download($filename);
     }
-
 
     /**
      * Export ledger card to Excel
@@ -380,7 +376,7 @@ class SupplyLedgerCardController extends Controller
 
         $entityName = 'COMMISSION ON HIGHER EDUCATION REGIONAL OFFICE XII';
 
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         $sheet->getPageSetup()->setOrientation(PageSetup::ORIENTATION_PORTRAIT);
@@ -398,7 +394,7 @@ class SupplyLedgerCardController extends Controller
 
         $currentRow = 5;
 
-        $sheet->setCellValue("A{$currentRow}", "Entity Name:");
+        $sheet->setCellValue("A{$currentRow}", 'Entity Name:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
 
         $sheet->mergeCells("B{$currentRow}:G{$currentRow}");
@@ -406,7 +402,7 @@ class SupplyLedgerCardController extends Controller
         $sheet->getStyle("B{$currentRow}:G{$currentRow}")->getBorders()->getBottom()->setBorderStyle(Border::BORDER_THIN);
         $sheet->getStyle("B{$currentRow}")->getAlignment()->setHorizontal(Alignment::HORIZONTAL_LEFT);
 
-        $sheet->setCellValue("I{$currentRow}", "Fund Cluster:");
+        $sheet->setCellValue("I{$currentRow}", 'Fund Cluster:');
         $sheet->getStyle("I{$currentRow}")->getFont()->setBold(true);
 
         $sheet->mergeCells("J{$currentRow}:L{$currentRow}");
@@ -417,13 +413,13 @@ class SupplyLedgerCardController extends Controller
         $currentRow++;
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Item:");
+        $sheet->setCellValue("A{$currentRow}", 'Item:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:G{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->item_name);
         $sheet->getStyle("A{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("H{$currentRow}", "Item Code:");
+        $sheet->setCellValue("H{$currentRow}", 'Item Code:');
         $sheet->getStyle("H{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("I{$currentRow}:L{$currentRow}");
         $sheet->setCellValue("I{$currentRow}", $supply->stock_no);
@@ -431,13 +427,13 @@ class SupplyLedgerCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Description:");
+        $sheet->setCellValue("A{$currentRow}", 'Description:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:G{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->description);
         $sheet->getStyle("A{$currentRow}:G{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(Border::BORDER_THIN);
 
-        $sheet->setCellValue("H{$currentRow}", "Re-order Point:");
+        $sheet->setCellValue("H{$currentRow}", 'Re-order Point:');
         $sheet->getStyle("H{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("I{$currentRow}:L{$currentRow}");
         $sheet->setCellValue("I{$currentRow}", $supply->reorder_point);
@@ -445,7 +441,7 @@ class SupplyLedgerCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Unit of Measurement:");
+        $sheet->setCellValue("A{$currentRow}", 'Unit of Measurement:');
         $sheet->getStyle("A{$currentRow}")->getFont()->setBold(true);
         $sheet->mergeCells("B{$currentRow}:L{$currentRow}");
         $sheet->setCellValue("B{$currentRow}", $supply->unit_of_measurement);
@@ -453,14 +449,14 @@ class SupplyLedgerCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "DATE");
-        $sheet->setCellValue("B{$currentRow}", "REFERENCE");
+        $sheet->setCellValue("A{$currentRow}", 'DATE');
+        $sheet->setCellValue("B{$currentRow}", 'REFERENCE');
         $sheet->mergeCells("C{$currentRow}:E{$currentRow}");
-        $sheet->setCellValue("C{$currentRow}", "RECEIPT");
+        $sheet->setCellValue("C{$currentRow}", 'RECEIPT');
         $sheet->mergeCells("F{$currentRow}:H{$currentRow}");
-        $sheet->setCellValue("F{$currentRow}", "ISSUE");
+        $sheet->setCellValue("F{$currentRow}", 'ISSUE');
         $sheet->mergeCells("I{$currentRow}:K{$currentRow}");
-        $sheet->setCellValue("I{$currentRow}", "BALANCE");
+        $sheet->setCellValue("I{$currentRow}", 'BALANCE');
         $sheet->setCellValue("L{$currentRow}", "NO. OF DAYS\nTO CONSUME");
 
         $headerRange = "A{$currentRow}:L{$currentRow}";
@@ -469,43 +465,43 @@ class SupplyLedgerCardController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $currentRow++;
 
         $subHeaders = [
-            'A' => "",
-            'B' => "",
-            'C' => "QTY.",
-            'D' => "UNIT COST",
-            'E' => "TOTAL COST",
-            'F' => "QTY.",
-            'G' => "UNIT COST",
-            'H' => "TOTAL COST",
-            'I' => "QTY.",
-            'J' => "UNIT COST",
-            'K' => "TOTAL COST",
-            'L' => ""
+            'A' => '',
+            'B' => '',
+            'C' => 'QTY.',
+            'D' => 'UNIT COST',
+            'E' => 'TOTAL COST',
+            'F' => 'QTY.',
+            'G' => 'UNIT COST',
+            'H' => 'TOTAL COST',
+            'I' => 'QTY.',
+            'J' => 'UNIT COST',
+            'K' => 'TOTAL COST',
+            'L' => '',
         ];
 
         foreach ($subHeaders as $col => $header) {
-            if ($header !== "") {
+            if ($header !== '') {
                 $sheet->setCellValue("{$col}{$currentRow}", $header);
             }
         }
 
-        $sheet->mergeCells("A" . ($currentRow - 1) . ":A{$currentRow}");
-        $sheet->mergeCells("B" . ($currentRow - 1) . ":B{$currentRow}");
-        $sheet->mergeCells("L" . ($currentRow - 1) . ":L{$currentRow}");
+        $sheet->mergeCells('A'.($currentRow - 1).":A{$currentRow}");
+        $sheet->mergeCells('B'.($currentRow - 1).":B{$currentRow}");
+        $sheet->mergeCells('L'.($currentRow - 1).":L{$currentRow}");
 
         $subHeaderRange = "A{$currentRow}:L{$currentRow}";
         $sheet->getStyle($subHeaderRange)->applyFromArray([
@@ -513,15 +509,15 @@ class SupplyLedgerCardController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'fill' => [
                 'fillType' => Fill::FILL_SOLID,
-                'color' => ['rgb' => 'F0F0F0']
+                'color' => ['rgb' => 'F0F0F0'],
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         $sheet->getRowDimension($currentRow - 1)->setRowHeight(25);
@@ -590,13 +586,12 @@ class SupplyLedgerCardController extends Controller
         $sheet->getColumnDimension('K')->setWidth(12);
         $sheet->getColumnDimension('L')->setWidth(12);
 
-        $filename = 'Supply_Ledger_Card_' . $supply->stock_no . '_' . $selectedYear;
+        $filename = 'Supply_Ledger_Card_'.$supply->stock_no.'_'.$selectedYear;
         if ($selectedMonth) {
-            $filename .= '_' . str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
+            $filename .= '_'.str_pad($selectedMonth, 2, '0', STR_PAD_LEFT);
         }
         $filename .= '.xlsx';
 
         return ExcelDownload::response($spreadsheet, $filename);
     }
-
 }

@@ -2,9 +2,8 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Designation;
+use Illuminate\Database\Seeder;
 
 class DesignationsSeeder extends Seeder
 {
@@ -47,5 +46,4 @@ class DesignationsSeeder extends Seeder
             ]);
         }
     }
-
 }

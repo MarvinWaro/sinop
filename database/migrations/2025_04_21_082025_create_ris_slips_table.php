@@ -61,7 +61,7 @@ return new class extends Migration
                 ->constrained('users')
                 ->nullOnDelete();
             $table->timestamp('declined_at')->nullable();
-            $table->enum('decline_signature_type', ['esign','sgd'])
+            $table->enum('decline_signature_type', ['esign', 'sgd'])
                 ->nullable();
             $table->text('decline_reason')->nullable();
 

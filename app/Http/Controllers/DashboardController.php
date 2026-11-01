@@ -2,21 +2,21 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Property;
+use App\Enums\ActivityAction;
+use App\Enums\ActivityModule;
 use App\Models\Location;
-use App\Models\User;
+use App\Models\Property;
+use App\Models\RisSlip;
 use App\Models\Supply;
 use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
-use App\Models\RisSlip;
-use App\Enums\ActivityAction;
-use App\Enums\ActivityModule;
+use App\Models\User;
 use App\Services\ActivityRecorder;
 use App\Services\RsmiAnalyticsService;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
@@ -122,11 +122,11 @@ class DashboardController extends Controller
         try {
             // Get transactions data for the last 3 years grouped by transaction type
             $transactions = SupplyTransaction::select(
-                    'transaction_type',
-                    DB::raw('YEAR(transaction_date) as year'),
-                    DB::raw('MONTH(transaction_date) as month'),
-                    DB::raw('COUNT(*) as total')
-                )
+                'transaction_type',
+                DB::raw('YEAR(transaction_date) as year'),
+                DB::raw('MONTH(transaction_date) as month'),
+                DB::raw('COUNT(*) as total')
+            )
                 ->where('transaction_date', '>=', Carbon::now()->subYears(3))
                 ->groupBy('transaction_type', 'year', 'month')
                 ->orderBy('transaction_type', 'asc')
@@ -144,7 +144,8 @@ class DashboardController extends Controller
 
         } catch (\Exception $e) {
             // Log the error and return empty array if something goes wrong
-            \Log::error('Error fetching monthly transactions data: ' . $e->getMessage());
+            \Log::error('Error fetching monthly transactions data: '.$e->getMessage());
+
             return [];
         }
     }
@@ -166,16 +167,18 @@ class DashboardController extends Controller
                     DB::raw('COUNT(*) as total')
                 )
                 ->where('transaction_date', '>=', Carbon::now()->subYears(3))
-                ->groupBy('department_id','transaction_type','year','month')
-                ->orderBy('year','asc')
-                ->orderBy('month','asc')
+                ->groupBy('department_id', 'transaction_type', 'year', 'month')
+                ->orderBy('year', 'asc')
+                ->orderBy('month', 'asc')
                 ->get();
 
             $departmentData = [];
 
             foreach ($transactions as $t) {
                 // skip if no relation
-                if (! $t->department) continue;
+                if (! $t->department) {
+                    continue;
+                }
 
                 $type = $t->transaction_type;
                 $dept = $t->department->name;
@@ -186,11 +189,10 @@ class DashboardController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error fetching department transactions data: '.$e->getMessage());
+
             return [];
         }
     }
-
-
 
     /**
      * NEW: Get stock status data for donut chart
@@ -231,29 +233,29 @@ class DashboardController extends Controller
             return [
                 'wellStocked' => $wellStocked,
                 'lowStock' => $lowStock,
-                'outOfStock' => $outOfStock
+                'outOfStock' => $outOfStock,
             ];
 
         } catch (\Exception $e) {
-            \Log::error('Error fetching stock status data: ' . $e->getMessage());
+            \Log::error('Error fetching stock status data: '.$e->getMessage());
+
             return [
                 'wellStocked' => 0,
                 'lowStock' => 0,
-                'outOfStock' => 0
+                'outOfStock' => 0,
             ];
         }
     }
-
 
     private function getMonthlyTransactionsDataWithRIS()
     {
         try {
             // Get SupplyTransaction data using transaction_date
             $supplyTransactions = SupplyTransaction::select(
-                    DB::raw('YEAR(transaction_date) as year'),
-                    DB::raw('MONTH(transaction_date) as month'),
-                    DB::raw('COUNT(*) as total')
-                )
+                DB::raw('YEAR(transaction_date) as year'),
+                DB::raw('MONTH(transaction_date) as month'),
+                DB::raw('COUNT(*) as total')
+            )
                 ->where('transaction_date', '>=', Carbon::now()->subYears(3))
                 ->groupBy('year', 'month')
                 ->get();
@@ -261,10 +263,10 @@ class DashboardController extends Controller
             // Get RIS data (if you want to include RIS slips in the count)
             // Adjust the date field based on your RIS table structure
             $risTransactions = RisSlip::select(
-                    DB::raw('YEAR(created_at) as year'), // Adjust this field if RIS has a different date field
-                    DB::raw('MONTH(created_at) as month'),
-                    DB::raw('COUNT(*) as total')
-                )
+                DB::raw('YEAR(created_at) as year'), // Adjust this field if RIS has a different date field
+                DB::raw('MONTH(created_at) as month'),
+                DB::raw('COUNT(*) as total')
+            )
                 ->where('created_at', '>=', Carbon::now()->subYears(3))
                 ->groupBy('year', 'month')
                 ->get();
@@ -275,10 +277,10 @@ class DashboardController extends Controller
             // Aggregate the combined data
             $monthlyData = [];
             foreach ($allTransactions as $transaction) {
-                if (!isset($monthlyData[$transaction->year])) {
+                if (! isset($monthlyData[$transaction->year])) {
                     $monthlyData[$transaction->year] = [];
                 }
-                if (!isset($monthlyData[$transaction->year][$transaction->month])) {
+                if (! isset($monthlyData[$transaction->year][$transaction->month])) {
                     $monthlyData[$transaction->year][$transaction->month] = 0;
                 }
                 $monthlyData[$transaction->year][$transaction->month] += $transaction->total;
@@ -287,7 +289,8 @@ class DashboardController extends Controller
             return $monthlyData;
 
         } catch (\Exception $e) {
-            \Log::error('Error fetching monthly transactions data with RIS: ' . $e->getMessage());
+            \Log::error('Error fetching monthly transactions data with RIS: '.$e->getMessage());
+
             return [];
         }
     }
@@ -312,7 +315,8 @@ class DashboardController extends Controller
 
             return $analytics;
         } catch (\Exception $e) {
-            \Log::error('Error fetching transaction analytics: ' . $e->getMessage());
+            \Log::error('Error fetching transaction analytics: '.$e->getMessage());
+
             return [];
         }
     }
@@ -329,13 +333,13 @@ class DashboardController extends Controller
 
         // Also get raw query results for debugging
         $rawData = SupplyTransaction::select(
-                'transaction_type',
-                DB::raw('YEAR(transaction_date) as year'),
-                DB::raw('MONTH(transaction_date) as month'),
-                DB::raw('COUNT(*) as total'),
-                DB::raw('MIN(transaction_date) as first_date'),
-                DB::raw('MAX(transaction_date) as last_date')
-            )
+            'transaction_type',
+            DB::raw('YEAR(transaction_date) as year'),
+            DB::raw('MONTH(transaction_date) as month'),
+            DB::raw('COUNT(*) as total'),
+            DB::raw('MIN(transaction_date) as first_date'),
+            DB::raw('MAX(transaction_date) as last_date')
+        )
             ->where('transaction_date', '>=', Carbon::now()->subYears(3))
             ->groupBy('transaction_type', 'year', 'month')
             ->orderBy('transaction_type', 'asc')
@@ -353,10 +357,10 @@ class DashboardController extends Controller
             ->select('department_id', DB::raw('COUNT(*) as total'))
             ->groupBy('department_id')
             ->get()
-            ->map(function($item) {
+            ->map(function ($item) {
                 return [
                     'department' => $item->department ? $item->department->name : 'Unknown',
-                    'total' => $item->total
+                    'total' => $item->total,
                 ];
             });
 
@@ -371,8 +375,8 @@ class DashboardController extends Controller
             'total_supplies' => Supply::count(),
             'date_range' => [
                 'from' => Carbon::now()->subYears(3)->format('Y-m-d'),
-                'to' => Carbon::now()->format('Y-m-d')
-            ]
+                'to' => Carbon::now()->format('Y-m-d'),
+            ],
         ]);
     }
 
@@ -458,5 +462,4 @@ class DashboardController extends Controller
 
         return redirect()->route('dashboard')->with('success', 'Switched back to Admin Mode.');
     }
-
 }

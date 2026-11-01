@@ -16,7 +16,7 @@ class Supplier extends Model
         'email',
         'contact_number',
         'address',         // newly added
-        'contact_person'   // newly added
+        'contact_person',   // newly added
     ];
 
     public function activityModule(): ActivityModule

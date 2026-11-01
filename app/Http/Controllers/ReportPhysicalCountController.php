@@ -2,24 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Department;
 use App\Models\Supply;
 use App\Models\SupplyStock;
 use App\Models\SupplyTransaction;
 use App\Support\ExcelDownload;
-use App\Models\Department;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
-
 // PhpSpreadsheet imports
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\PageSetup;
-use PhpOffice\PhpSpreadsheet\RichText\RichText;
-use PhpOffice\PhpSpreadsheet\RichText\Run;
 
 class ReportPhysicalCountController extends Controller
 {
@@ -60,7 +55,7 @@ class ReportPhysicalCountController extends Controller
             'fund_clusters_count' => $fundClusters->count(),
             'selected_year' => $selectedYear,
             'selected_semester' => $selectedSemester,
-            'selected_fund_cluster' => $selectedFundCluster ?? 'All'
+            'selected_fund_cluster' => $selectedFundCluster ?? 'All',
         ]);
 
         return Inertia::render('rpci/index', [
@@ -80,7 +75,7 @@ class ReportPhysicalCountController extends Controller
             'year' => 'required|integer',
             'semester' => 'required|in:1,2',
             'fund_cluster' => 'nullable|in:101,151',
-            'department_id' => 'nullable|exists:departments,id'
+            'department_id' => 'nullable|exists:departments,id',
         ]);
 
         $year = $validated['year'];
@@ -125,26 +120,26 @@ class ReportPhysicalCountController extends Controller
                     ->where('fund_cluster', $fundCluster)
                     ->exists();
 
-                if (!$hasStockInFundCluster) {
+                if (! $hasStockInFundCluster) {
                     // no current stock row, but we may have historical txns → compute from txns
-                    $dummy = (object)[
-                        'supply_id'       => $supply->supply_id,
-                        'fund_cluster'    => $fundCluster,
-                        'unit_cost'       => null,
-                        'quantity_on_hand'=> 0,
+                    $dummy = (object) [
+                        'supply_id' => $supply->supply_id,
+                        'fund_cluster' => $fundCluster,
+                        'unit_cost' => null,
+                        'quantity_on_hand' => 0,
                     ];
-                    $unitCost    = $this->calculateWeightedAverageUnitCost($dummy, $endDate);
-                    $bookQty     = 0; // as there's no stock row
+                    $unitCost = $this->calculateWeightedAverageUnitCost($dummy, $endDate);
+                    $bookQty = 0; // as there's no stock row
                     // In generate()
                     $reportData->push([
-                        'supply_id'      => $supply->supply_id,
-                        'stock_no'       => $supply->stock_no,
-                        'item_name'      => $supply->item_name,
-                        'description'    => $supply->description,
-                        'unit'           => $supply->unit_of_measurement,
-                        'fund_cluster'   => $fundCluster,
-                        'book_quantity'  => $bookQty,
-                        'unit_cost'      => $unitCost,
+                        'supply_id' => $supply->supply_id,
+                        'stock_no' => $supply->stock_no,
+                        'item_name' => $supply->item_name,
+                        'description' => $supply->description,
+                        'unit' => $supply->unit_of_measurement,
+                        'fund_cluster' => $fundCluster,
+                        'book_quantity' => $bookQty,
+                        'unit_cost' => $unitCost,
                     ]);
                     // In exportExcel()
                     // $reportData->push([... 'unit_value' => $unitCost, 'balance_per_card' => $bookQty, ...]);
@@ -153,10 +148,9 @@ class ReportPhysicalCountController extends Controller
                 }
             }
 
-
             // Get stocks for this supply (filtered by fund cluster if specified)
             $stocks = SupplyStock::where('supply_id', $supply->supply_id)
-                ->when($fundCluster, function($query) use ($fundCluster) {
+                ->when($fundCluster, function ($query) use ($fundCluster) {
                     return $query->where('fund_cluster', $fundCluster);
                 })
                 ->get();
@@ -208,7 +202,7 @@ class ReportPhysicalCountController extends Controller
         // Calculate simplified summary (only book-related data)
         $summary = [
             'total_items' => $reportData->count(),
-            'total_book_value' => $reportData->sum(function($item) {
+            'total_book_value' => $reportData->sum(function ($item) {
                 return $item['book_quantity'] * $item['unit_cost'];
             }),
         ];
@@ -223,7 +217,7 @@ class ReportPhysicalCountController extends Controller
             'fund_cluster' => $fundCluster ?? 'All',
             'department_id' => $departmentId,
             'total_items' => $reportData->count(),
-            'total_book_value' => $summary['total_book_value']
+            'total_book_value' => $summary['total_book_value'],
         ]);
 
         return Inertia::render('rpci/report', [
@@ -249,7 +243,7 @@ class ReportPhysicalCountController extends Controller
         $transactions = SupplyTransaction::where('supply_id', $stock->supply_id)
             ->where(function ($q) use ($stock) {
                 $q->where('fund_cluster', $stock->fund_cluster)
-                ->orWhereNull('fund_cluster');
+                    ->orWhereNull('fund_cluster');
             })
             ->whereDate('transaction_date', '<=', $endDate->toDateString())
             ->orderBy('transaction_date', 'asc')
@@ -257,27 +251,27 @@ class ReportPhysicalCountController extends Controller
             ->get();
 
         $runningBalance = 0.0;
-        $runningTotal   = 0.0;
-        $lastWA         = null; // keep the last non-zero weighted average we reach
+        $runningTotal = 0.0;
+        $lastWA = null; // keep the last non-zero weighted average we reach
 
         foreach ($transactions as $t) {
             if ($t->transaction_type === 'receipt') {
                 $runningBalance += $t->quantity;
-                $runningTotal   += $t->total_cost;
+                $runningTotal += $t->total_cost;
                 if ($runningBalance > 0) {
                     $lastWA = $runningTotal / $runningBalance;
                 }
             } elseif ($t->transaction_type === 'issue') {
                 // use WA **before** issuing
                 $currentWA = $runningBalance > 0 ? ($runningTotal / $runningBalance) : ($lastWA ?? 0);
-                $runningTotal   = max(0, $runningTotal - ($currentWA * $t->quantity));
+                $runningTotal = max(0, $runningTotal - ($currentWA * $t->quantity));
                 $runningBalance -= $t->quantity;
                 // keep $lastWA as the last meaningful WA (do not zero it)
             } elseif ($t->transaction_type === 'adjustment') {
                 if ($t->balance_quantity !== null && $t->unit_cost !== null) {
                     $runningBalance = $t->balance_quantity;
-                    $runningTotal   = $runningBalance * $t->unit_cost;
-                    $lastWA         = $t->unit_cost;
+                    $runningTotal = $runningBalance * $t->unit_cost;
+                    $lastWA = $t->unit_cost;
                 }
             }
         }
@@ -285,7 +279,6 @@ class ReportPhysicalCountController extends Controller
         // If we never saw a WA from transactions, fall back to the stock's unit_cost; otherwise return last WA
         return $lastWA ?? ($stock->unit_cost ?? 0);
     }
-
 
     public function exportExcel(Request $request)
     {
@@ -319,13 +312,13 @@ class ReportPhysicalCountController extends Controller
                     ->exists();
 
                 // UPDATED: If no stock exists in the specified fund cluster, compute from transactions instead of zeros
-                if (!$hasStockInFundCluster) {
+                if (! $hasStockInFundCluster) {
                     // no current stock row, but we may have historical txns → compute from txns
-                    $dummy = (object)[
-                        'supply_id'       => $supply->supply_id,
-                        'fund_cluster'    => $fundCluster,
-                        'unit_cost'       => null,
-                        'quantity_on_hand'=> 0,
+                    $dummy = (object) [
+                        'supply_id' => $supply->supply_id,
+                        'fund_cluster' => $fundCluster,
+                        'unit_cost' => null,
+                        'quantity_on_hand' => 0,
                     ];
                     $unitCost = $this->calculateWeightedAverageUnitCost($dummy, $endDate);
                     $bookQty = 0; // as there's no stock row
@@ -338,13 +331,14 @@ class ReportPhysicalCountController extends Controller
                         'unit_value' => $unitCost,
                         'balance_per_card' => $bookQty,
                     ]);
+
                     continue;
                 }
             }
 
             // Get stocks for this supply (filtered by fund cluster if specified)
             $stocks = SupplyStock::where('supply_id', $supply->supply_id)
-                ->when($fundCluster, function($query) use ($fundCluster) {
+                ->when($fundCluster, function ($query) use ($fundCluster) {
                     return $query->where('fund_cluster', $fundCluster);
                 })
                 ->get();
@@ -390,7 +384,7 @@ class ReportPhysicalCountController extends Controller
         $reportData = $reportData->sortBy('stock_no')->values();
 
         // Create Excel file
-        $spreadsheet = new Spreadsheet();
+        $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
 
         // Set page setup
@@ -477,11 +471,11 @@ class ReportPhysicalCountController extends Controller
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_CENTER,
-                'wrapText' => true
+                'wrapText' => true,
             ],
             'borders' => [
-                'allBorders' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'allBorders' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         // Data rows start at row 14
@@ -535,84 +529,84 @@ class ReportPhysicalCountController extends Controller
 
         // Certified Correct by section (NO MERGE - individual cells as per COA template)
         // Row 1: "Certified Correct by:" in column A
-        $sheet->setCellValue("A{$signatureStartRow}", "Certified Correct by:");
+        $sheet->setCellValue("A{$signatureStartRow}", 'Certified Correct by:');
         $sheet->getStyle("A{$signatureStartRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
         ]);
 
         // Row 2: Signature line in column B (1 row below)
         $signatureLineRow = $signatureStartRow + 1;
-        $sheet->setCellValue("B{$signatureLineRow}", "_______________________");
+        $sheet->setCellValue("B{$signatureLineRow}", '_______________________');
         $sheet->getStyle("B{$signatureLineRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Row 3: Description in column B (1 row below signature line) - ALL IN ONE CELL - TOP ALIGNED
         $descriptionRow = $signatureLineRow + 1;
-        $sheet->setCellValue("B{$descriptionRow}", "Signature over Printed Name of Inventory Committee Chair and Members");
+        $sheet->setCellValue("B{$descriptionRow}", 'Signature over Printed Name of Inventory Committee Chair and Members');
         $sheet->getStyle("B{$descriptionRow}")->applyFromArray([
             'font' => ['size' => 9, 'name' => 'Arial'],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_TOP,
-                'wrapText' => true
-            ]
+                'wrapText' => true,
+            ],
         ]);
 
         // Approved by section
         // Row 1: "Approved by:" in column E (same row as "Certified Correct by:")
-        $sheet->setCellValue("E{$signatureStartRow}", "Approved by:");
+        $sheet->setCellValue("E{$signatureStartRow}", 'Approved by:');
         $sheet->getStyle("E{$signatureStartRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
         ]);
 
         // Row 2: Signature line spanning F:H (same row as certified signature line)
         $sheet->mergeCells("F{$signatureLineRow}:H{$signatureLineRow}");
-        $sheet->setCellValue("F{$signatureLineRow}", "________________________________");
+        $sheet->setCellValue("F{$signatureLineRow}", '________________________________');
         $sheet->getStyle("F{$signatureLineRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Row 3: Description in column E (same row as certified description) - ALL IN ONE CELL - TOP ALIGNED
         $sheet->mergeCells("F{$descriptionRow}:H{$descriptionRow}");
-        $sheet->setCellValue("F{$descriptionRow}", "Signature over Printed Name of Head of Agency/Entity or Authorized Representative");
+        $sheet->setCellValue("F{$descriptionRow}", 'Signature over Printed Name of Head of Agency/Entity or Authorized Representative');
         $sheet->getStyle("F{$descriptionRow}")->applyFromArray([
             'font' => ['size' => 9, 'name' => 'Arial'],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_TOP,
-                'wrapText' => true
-            ]
+                'wrapText' => true,
+            ],
         ]);
 
         // Verified by section
         // Row 1: "Verified by:" in column J (same row as "Certified Correct by:")
-        $sheet->setCellValue("J{$signatureStartRow}", "Verified by:");
+        $sheet->setCellValue("J{$signatureStartRow}", 'Verified by:');
         $sheet->getStyle("J{$signatureStartRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_LEFT],
         ]);
 
         // Row 2: Signature line in column J (same row as certified signature line)
-        $sheet->setCellValue("J{$signatureLineRow}", "______________________________");
+        $sheet->setCellValue("J{$signatureLineRow}", '______________________________');
         $sheet->getStyle("J{$signatureLineRow}")->applyFromArray([
             'font' => ['size' => 10, 'name' => 'Arial'],
-            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
         ]);
 
         // Row 3: Description in column J (same row as certified description) - ALL IN ONE CELL - TOP ALIGNED
-        $sheet->setCellValue("J{$descriptionRow}", "Signature over Printed Name of COA Representative");
+        $sheet->setCellValue("J{$descriptionRow}", 'Signature over Printed Name of COA Representative');
         $sheet->getStyle("J{$descriptionRow}")->applyFromArray([
             'font' => ['size' => 9, 'name' => 'Arial'],
             'alignment' => [
                 'horizontal' => Alignment::HORIZONTAL_CENTER,
                 'vertical' => Alignment::VERTICAL_TOP,
-                'wrapText' => true
-            ]
+                'wrapText' => true,
+            ],
         ]);
 
         // Add borders around the entire signature section (outline only)
@@ -620,8 +614,8 @@ class ReportPhysicalCountController extends Controller
         $signatureRange = "A{$signatureStartRow}:J{$signatureEndRow}";
         $sheet->getStyle($signatureRange)->applyFromArray([
             'borders' => [
-                'outline' => ['borderStyle' => Border::BORDER_THIN]
-            ]
+                'outline' => ['borderStyle' => Border::BORDER_THIN],
+            ],
         ]);
 
         // Set column widths to match template exactly
@@ -636,7 +630,7 @@ class ReportPhysicalCountController extends Controller
         $sheet->getColumnDimension('I')->setWidth(10);  // Shortage/Overage Value
         $sheet->getColumnDimension('J')->setWidth(15);  // Remarks
 
-        $filename = 'RPCI_' . $year . '_S' . $semester . ($fundCluster ? "_FC{$fundCluster}" : "_AllFC") . '.xlsx';
+        $filename = 'RPCI_'.$year.'_S'.$semester.($fundCluster ? "_FC{$fundCluster}" : '_AllFC').'.xlsx';
 
         \Log::info('RPCI Excel Export Generated', [
             'year' => $year,
@@ -644,7 +638,7 @@ class ReportPhysicalCountController extends Controller
             'fund_cluster' => $fundCluster ?? 'All',
             'items_count' => $reportData->count(),
             'filename' => $filename,
-            'signature_section_row' => $signatureStartRow
+            'signature_section_row' => $signatureStartRow,
         ]);
 
         return ExcelDownload::response($spreadsheet, $filename);
@@ -656,6 +650,7 @@ class ReportPhysicalCountController extends Controller
     private function getCurrentSemester()
     {
         $currentMonth = Carbon::now()->month;
+
         return $currentMonth <= 6 ? 1 : 2;
     }
 
@@ -676,10 +671,9 @@ class ReportPhysicalCountController extends Controller
 
         return [
             'start' => $startDate,
-            'end' => $endDate
+            'end' => $endDate,
         ];
     }
-
 
     private function calculateBookQuantity($stock, $endDate)
     {
@@ -690,7 +684,7 @@ class ReportPhysicalCountController extends Controller
         $transactions = SupplyTransaction::where('supply_id', $stock->supply_id)
             ->where(function ($q) use ($stock) {
                 $q->where('fund_cluster', $stock->fund_cluster)
-                ->orWhereNull('fund_cluster');
+                    ->orWhereNull('fund_cluster');
             })
             ->whereDate('transaction_date', '<=', $endDate->toDateString())
             ->orderBy('transaction_date', 'asc')
@@ -699,13 +693,17 @@ class ReportPhysicalCountController extends Controller
 
         $running = 0;
         foreach ($transactions as $t) {
-            if ($t->transaction_type === 'receipt')      $running += $t->quantity;
-            elseif ($t->transaction_type === 'issue')    $running -= $t->quantity;
-            elseif ($t->transaction_type === 'adjustment' && $t->balance_quantity !== null) $running = $t->balance_quantity;
+            if ($t->transaction_type === 'receipt') {
+                $running += $t->quantity;
+            } elseif ($t->transaction_type === 'issue') {
+                $running -= $t->quantity;
+            } elseif ($t->transaction_type === 'adjustment' && $t->balance_quantity !== null) {
+                $running = $t->balance_quantity;
+            }
         }
+
         return max(0, $running);
     }
-
 
     private function calculateBookQuantityAlternative($stock, $endDate)
     {
@@ -718,7 +716,6 @@ class ReportPhysicalCountController extends Controller
         return $this->calculateBookQuantity($stock, $endDate);
     }
 
-
     private function generateVarianceRemarks($variance)
     {
         if ($variance == 0) {
@@ -729,5 +726,4 @@ class ReportPhysicalCountController extends Controller
             return 'Overage';
         }
     }
-
 }

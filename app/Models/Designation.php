@@ -4,8 +4,8 @@ namespace App\Models;
 
 use App\Enums\ActivityModule;
 use App\Models\Concerns\LogsActivity;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 
 class Designation extends Model
 {

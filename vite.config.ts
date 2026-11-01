@@ -72,6 +72,8 @@ export default defineConfig({
         htmlWhitespaceSensitivity: 'css',
         ignorePatterns: [
             '.github/**',
+            // Docs are written by hand (REFACTOR_PLAN.md's tables included).
+            '**/*.md',
             'composer.json',
             'resources/js/components/ui/*',
             'resources/views/mail/*',
