@@ -63,6 +63,7 @@ import {
     toNumber,
     todayIso,
 } from '@/lib/format';
+import { useOpenOnArrival } from '@/lib/open-on-arrival';
 import { cn } from '@/lib/utils';
 import { getJson } from '@/lib/http';
 import {
@@ -128,6 +129,9 @@ export default function StocksIndex(props: Props) {
     // New IAR: closing a form with changes asks first.
     const [iarDirty, setIarDirty] = useState(false);
     const [confirmIarDiscard, setConfirmIarDiscard] = useState(false);
+
+    // The phone tab bar's "New IAR" opens the form on arrival.
+    useOpenOnArrival('new-iar', () => can('stocks.create') && setCreating({}));
 
     const closeIar = () => {
         setCreating(null);
