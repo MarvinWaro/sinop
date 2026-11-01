@@ -1,7 +1,7 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { Bell, BellOff, CheckCheck } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import {
     NotificationItem,
     NotificationSkeleton,
@@ -174,12 +174,12 @@ export function NotificationBell() {
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="relative size-9"
+                            className="relative size-8 text-muted-foreground hover:text-foreground"
                             aria-label={label}
                         >
-                            <Bell className="size-5" />
+                            <Bell className="size-4" />
                             {unread > 0 && (
-                                <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] leading-none font-semibold text-white tabular-nums">
+                                <span className="absolute top-0.5 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-alert px-1 text-[9px] leading-none font-semibold text-white tabular-nums shadow-alert ring-2 ring-background">
                                     {badgeLabel(unread)}
                                 </span>
                             )}

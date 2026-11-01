@@ -21,6 +21,11 @@
     --color-background: var(--background);
     --color-foreground: var(--foreground);
 
+    /* Unread counts (bell, messages, sidebar): a neon red with a soft glow,
+       the same in every theme and mode so it always stands out. */
+    --color-alert: #ff1744;
+    --shadow-alert: 0 0 8px 1px rgb(255 23 68 / 0.65);
+
     --color-card: var(--card);
     --color-card-foreground: var(--card-foreground);
 
@@ -136,13 +141,13 @@
     --chart-4: oklch(0.828 0.189 84.429);
     --chart-5: oklch(0.769 0.188 70.08);
     --radius: 0.625rem;
-    --sidebar: #f5f6f7; /* chrome */
+    --sidebar: #e7eef8; /* chrome: a soft blue, so the white panel and its notch stand out */
     --sidebar-foreground: #223548;
     --sidebar-primary: #0057d2;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #eaecee;
+    --sidebar-accent: #d8e2f0;
     --sidebar-accent-foreground: #223548;
-    --sidebar-border: #dfe3e8;
+    --sidebar-border: #d3dce8;
     --sidebar-ring: #0057d2;
     --band: #0057d2;
     --band-foreground: #ffffff;
@@ -173,7 +178,7 @@
     --chart-3: oklch(0.769 0.188 70.08);
     --chart-4: oklch(0.627 0.265 303.9);
     --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar: #12171c; /* matches background */
+    --sidebar: #1d232a; /* chrome a step above the ground, so the panel and its notch read */
     --sidebar-foreground: #eaecee;
     --sidebar-primary: #6bc0ff;
     --sidebar-primary-foreground: #12171c;
@@ -224,11 +229,11 @@ html.theme-vercel {
     --chart-4: #ff0080;
     --chart-5: #50e3c2;
     --radius: 0.5rem; /* buttons/inputs 6px, cards 12px */
-    --sidebar: #fafafa;
+    --sidebar: #ededed; /* a step below the canvas, so the panel and its notch stand out */
     --sidebar-foreground: #171717;
     --sidebar-primary: #171717;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #ebebeb;
+    --sidebar-accent: #e2e2e2;
     --sidebar-accent-foreground: #171717;
     --sidebar-border: #ebebeb;
     --sidebar-ring: #0070f3;
@@ -261,7 +266,7 @@ html.theme-vercel.dark {
     --chart-3: #f5a623;
     --chart-4: #ff4fa3;
     --chart-5: #50e3c2;
-    --sidebar: #0a0a0a;
+    --sidebar: #111111; /* as the card, so the panel and its notch read */
     --sidebar-foreground: #ededed;
     --sidebar-primary: #ededed;
     --sidebar-primary-foreground: #0a0a0a;
@@ -300,11 +305,11 @@ html.theme-notion {
     --chart-4: #ff64c8; /* sticker pink */
     --chart-5: #1aae39; /* sticker green */
     --radius: 0.625rem; /* buttons 8px, cards 12px */
-    --sidebar: #efeeec;
+    --sidebar: #ebe8e3; /* deeper paper, so the panel and its notch stand out */
     --sidebar-foreground: #31302e;
     --sidebar-primary: #0075de;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #e5e3df;
+    --sidebar-accent: #dfdbd4;
     --sidebar-accent-foreground: #1f1e1d;
     --sidebar-border: #e6e6e6;
     --sidebar-ring: #0075de;
@@ -394,4 +399,177 @@ html.theme-notion :is(h1, h2) {
         -webkit-appearance: none;
         appearance: none;
     }
+}
+
+/* Moving to another page cross-fades (`lib/page-transitions.ts`): briefly,
+   so the next page is quickly clickable, and not at all when the visitor
+   asks for reduced motion. */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation-duration: 180ms;
+    animation-timing-function: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none;
+    }
+}
+
+/* The sidebar stays put while the page fades, so its notch glides in view. */
+::view-transition-group(app-sidebar) {
+    animation-duration: 0s;
+}
+
+::view-transition-old(app-sidebar) {
+    display: none;
+}
+
+::view-transition-new(app-sidebar) {
+    animation: none;
+}
+
+/*
+ * Sidebar notch (components/sidebar-notch.tsx): the active item is a tab in
+ * the page's colour that runs into the content panel, with concave corners
+ * above and below where it meets the panel, so the panel seems to bulge out
+ * to meet it. It glides between items on a soft spring.
+ */
+.sidebar-notch {
+    --notch-r: var(--radius);
+    --notch-spring: cubic-bezier(0.22, 1, 0.36, 1);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--notch-w, 0);
+    height: var(--notch-h, 0);
+    transform: translate(var(--notch-x, 0), var(--notch-y, 0));
+    border-radius: var(--notch-r) 0 0 var(--notch-r);
+    background: var(--background);
+    pointer-events: none;
+    transition:
+        transform 560ms var(--notch-spring),
+        opacity 150ms ease;
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+    .sidebar-notch {
+        --notch-spring: linear(
+            0,
+            0.0941 5.6%,
+            0.2736 11.1%,
+            0.4548 16.7%,
+            0.6076 22.2%,
+            0.7255 27.8%,
+            0.8119 33.3%,
+            0.8732 38.9%,
+            0.9156 44.4%,
+            0.9444 50%,
+            0.9636 55.6%,
+            0.9764 61.1%,
+            0.9848 66.7%,
+            0.9902 72.2%,
+            0.9938 77.8%,
+            0.996 83.3%,
+            0.9975 88.9%,
+            0.9984 94.4%,
+            1 100%
+        );
+    }
+}
+
+.sidebar-notch::before,
+.sidebar-notch::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    width: var(--notch-r);
+    height: var(--notch-r);
+}
+
+.sidebar-notch::before {
+    top: calc(var(--notch-r) * -1);
+    background: radial-gradient(
+        circle at 0 0,
+        transparent var(--notch-r),
+        var(--background) calc(var(--notch-r) + 0.5px)
+    );
+}
+
+.sidebar-notch::after {
+    bottom: calc(var(--notch-r) * -1);
+    background: radial-gradient(
+        circle at 0 100%,
+        transparent var(--notch-r),
+        var(--background) calc(var(--notch-r) + 0.5px)
+    );
+}
+
+.sidebar-notch[data-hidden] {
+    opacity: 0;
+}
+
+/* With the notch drawn, the active item is the tab itself: no fill of its own. */
+[data-sidebar='sidebar']:has(> .sidebar-notch)
+    [data-sidebar='menu-button'][data-active='true'] {
+    background-color: transparent;
+    color: var(--sidebar-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sidebar-notch {
+        transition: opacity 150ms ease;
+    }
+}
+
+/* Toasts (components/ui/sonner): a light tint of what happened. Green for
+   done, blue for changed or for information, red for removed or failed,
+   amber for a warning. The icon carries the colour; the text stays easy to
+   read. `toast-updated` and `toast-deleted` are set by use-flash-toast. */
+[data-sonner-toast][data-type='success'] {
+    --toast-tone: oklch(0.62 0.16 150);
+}
+
+[data-sonner-toast][data-type='info'],
+[data-sonner-toast].toast-updated {
+    --toast-tone: oklch(0.6 0.17 250);
+}
+
+[data-sonner-toast][data-type='error'],
+[data-sonner-toast].toast-deleted {
+    --toast-tone: oklch(0.6 0.21 25);
+}
+
+[data-sonner-toast][data-type='warning'] {
+    --toast-tone: oklch(0.74 0.16 70);
+}
+
+[data-sonner-toast][data-type='success'],
+[data-sonner-toast][data-type='info'],
+[data-sonner-toast][data-type='error'],
+[data-sonner-toast][data-type='warning'] {
+    --normal-bg: color-mix(in oklch, var(--toast-tone) 11%, var(--popover));
+    --normal-border: color-mix(in oklch, var(--toast-tone) 40%, transparent);
+}
+
+/* When it happened, under every toast's text (lib/toast.ts). */
+[data-sonner-toast] .toast-time {
+    display: block;
+    margin-top: 0.125rem;
+    font-size: 0.6875rem;
+    opacity: 0.7;
+}
+
+[data-sonner-toast] [data-icon] {
+    color: var(--toast-tone, currentColor);
+}
+
+.dark [data-sonner-toast][data-type] {
+    --normal-bg: color-mix(
+        in oklch,
+        var(--toast-tone, transparent) 16%,
+        var(--popover)
+    );
 }

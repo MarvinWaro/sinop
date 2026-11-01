@@ -1,7 +1,8 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import {
     CheckCircle2,
     FileSpreadsheet,
+    MessageSquare,
     PackageCheck,
     Send,
     XCircle,
@@ -42,10 +43,12 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { useCan } from '@/hooks/use-can';
 import { useLiveProps } from '@/hooks/use-inbox';
 import { formatDateTime, formatLongDate, toNumber } from '@/lib/format';
 import { risKey, supplyLabel } from '@/lib/ris';
 import { boxAspect } from '@/lib/signature-placement';
+import { index as messagesIndex } from '@/routes/messages';
 import {
     approve,
     decline,
@@ -54,6 +57,7 @@ import {
     issue,
     receive,
     show as showRis,
+    signature as risSignature,
 } from '@/routes/ris';
 import type {
     AppUser,
@@ -101,7 +105,11 @@ const receiveTerms = [
 ];
 
 export default function RisShow({ risSlip, recipients, permissions }: Props) {
-    const { errors } = usePage().props as { errors?: Record<string, string> };
+    const { auth, errors } = usePage().props as {
+        auth: { user: AppUser; isAdminUserMode: boolean };
+        errors?: Record<string, string>;
+    };
+    const can = useCan();
     // Approved, issued or received elsewhere: the slip updates here.
     useLiveProps(['risSlip', 'permissions']);
     const [approving, setApproving] = useState(false);
@@ -109,10 +117,19 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
     const [issuing, setIssuing] = useState(false);
 
     const key = risKey(risSlip);
+    // Questions about this request go to Messages: the requester writes to
+    // the supply office, the office writes to the requester.
+    const ownRequest = risSlip.requested_by === auth.user.id;
+    const messageLabel =
+        can('messages.office') && !auth.isAdminUserMode && !ownRequest
+            ? 'Message requester'
+            : ownRequest || risSlip.received_by === auth.user.id
+              ? 'Message supply office'
+              : null;
 
     return (
         <>
-            <Head title={`RIS ${risSlip.ris_no}`} />
+            <Head title={risSlip.ris_no} />
             <PageContainer>
                 <PageHeader
                     title={`Requisition and Issue Slip ${risSlip.ris_no}`}
@@ -126,6 +143,18 @@ export default function RisShow({ risSlip, recipients, permissions }: Props) {
                     }
                     actions={
                         <>
+                            {messageLabel && (
+                                <Button asChild variant="outline">
+                                    <Link
+                                        href={messagesIndex({
+                                            query: { ris: risSlip.route_key },
+                                        })}
+                                    >
+                                        <MessageSquare />
+                                        {messageLabel}
+                                    </Link>
+                                </Button>
+                            )}
                             <Button asChild variant="outline">
                                 <a href={exportExcel.url(key)}>
                                     <FileSpreadsheet />
@@ -425,13 +454,18 @@ function Signatory({
     declined?: boolean;
     pendingLabel?: string;
 }) {
+    const { risSlip } = usePage<Props>().props;
     // Where the signer placed it; slips signed before that show the
-    // person's current signature, centred.
+    // person's current signature, centred, loaded through the RIS so only
+    // people who may open it see it.
     const placed = frozen.find((signature) => signature.step === step);
     const signature: BoxSignature | null = placed
         ? { url: placed.url, placement: placed }
         : user?.signature_url
-          ? { url: user.signature_url, placement: null }
+          ? {
+                url: risSignature.url({ risSlip: risKey(risSlip), step }),
+                placement: null,
+            }
           : null;
 
     return (
@@ -512,7 +546,7 @@ function ApproveDialog({
             <DialogContent>
                 <form onSubmit={submit} className="grid gap-4">
                     <DialogHeader>
-                        <DialogTitle>Approve RIS {risSlip.ris_no}</DialogTitle>
+                        <DialogTitle>Approve {risSlip.ris_no}</DialogTitle>
                         <DialogDescription>
                             Approved requests are forwarded to the admin for
                             issuance.
@@ -613,7 +647,7 @@ function DeclineDialog({
             <DialogContent>
                 <form onSubmit={submit} className="grid gap-4">
                     <DialogHeader>
-                        <DialogTitle>Decline RIS {risSlip.ris_no}</DialogTitle>
+                        <DialogTitle>Decline {risSlip.ris_no}</DialogTitle>
                         <DialogDescription>
                             The requester will be notified with your reason.
                             This cannot be undone.
@@ -675,8 +709,8 @@ function IssueDialog({
 }) {
     const [agreed, setAgreed] = useState(false);
 
-    // Same rules as the Blade view: issue at least 1 when stock exists, at most
-    // min(requested, available); 0 only when nothing is available.
+    // Same rules as RisSlipController@issue: at most min(requested,
+    // available); less, down to 0, only with a reason in the remarks.
     const limits = risSlip.items.map((item) => {
         const available = toNumber(item.total_available);
         const max = Math.min(available, item.quantity_requested);
@@ -684,7 +718,7 @@ function IssueDialog({
         return {
             available,
             matching: toNumber(item.matching_fund_available),
-            min: available > 0 ? 1 : 0,
+            min: 0,
             max,
         };
     });
@@ -731,6 +765,10 @@ function IssueDialog({
             item.quantity_issued < limit.min || item.quantity_issued > limit.max
         );
     }).length;
+    // Holding back stock that could be issued needs a reason.
+    const needsReason = (item: IssueItem, index: number) =>
+        item.quantity_issued < limits[index].max && item.remarks.trim() === '';
+    const missingReasons = form.data.items.filter(needsReason).length;
     const nothingToIssue = form.data.items.every(
         (item) => item.quantity_issued <= 0,
     );
@@ -748,13 +786,13 @@ function IssueDialog({
             <DialogContent className="flex max-h-[92vh] flex-col sm:max-w-4xl">
                 <DialogHeader>
                     <DialogTitle>
-                        Issue supplies for RIS {risSlip.ris_no}
+                        Issue supplies for {risSlip.ris_no}
                     </DialogTitle>
                     <DialogDescription>
-                        Issue at least 1 unit for items with stock; the maximum
-                        is the requested amount or the available stock,
-                        whichever is lower. Zero is only allowed when nothing is
-                        available.
+                        Up to the requested amount or the available stock,
+                        whichever is lower. You can issue less, even 0 (for
+                        example, stock held in reserve), but say why in the
+                        remarks. At least one item must be issued.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -787,6 +825,10 @@ function IssueDialog({
                                     const invalid =
                                         row.quantity_issued < limit.min ||
                                         row.quantity_issued > limit.max;
+                                    const reasonMissing = needsReason(
+                                        row,
+                                        index,
+                                    );
 
                                     return (
                                         <TableRow
@@ -869,8 +911,7 @@ function IssueDialog({
                                                             aria-label={`Issue quantity for ${item.supply?.item_name ?? 'item'}`}
                                                         />
                                                         <span className="text-xs text-muted-foreground">
-                                                            Min {limit.min}, max{' '}
-                                                            {limit.max}
+                                                            0 to {limit.max}
                                                         </span>
                                                     </div>
                                                 ) : (
@@ -880,20 +921,38 @@ function IssueDialog({
                                                 )}
                                             </TableCell>
                                             <TableCell>
-                                                <Input
-                                                    value={row.remarks}
-                                                    readOnly={
-                                                        limit.available <= 0
-                                                    }
-                                                    placeholder="Optional remarks"
-                                                    onChange={(e) =>
-                                                        updateItem(index, {
-                                                            remarks:
-                                                                e.target.value,
-                                                        })
-                                                    }
-                                                    aria-label="Remarks"
-                                                />
+                                                <div className="grid gap-1">
+                                                    <Input
+                                                        value={row.remarks}
+                                                        readOnly={
+                                                            limit.available <= 0
+                                                        }
+                                                        placeholder={
+                                                            row.quantity_issued <
+                                                            limit.max
+                                                                ? 'Why less? e.g. reserved'
+                                                                : 'Optional remarks'
+                                                        }
+                                                        onChange={(e) =>
+                                                            updateItem(index, {
+                                                                remarks:
+                                                                    e.target
+                                                                        .value,
+                                                            })
+                                                        }
+                                                        aria-invalid={
+                                                            reasonMissing ||
+                                                            undefined
+                                                        }
+                                                        aria-label="Remarks"
+                                                    />
+                                                    {reasonMissing && (
+                                                        <span className="text-xs text-destructive">
+                                                            Say why less than{' '}
+                                                            {limit.max}.
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </TableCell>
                                         </TableRow>
                                     );
@@ -907,6 +966,11 @@ function IssueDialog({
                             {invalidRows}{' '}
                             {invalidRows === 1 ? 'item has' : 'items have'} an
                             issue quantity outside the allowed range.
+                        </p>
+                    )}
+                    {nothingToIssue && (
+                        <p className="text-sm text-destructive">
+                            Issue at least one item.
                         </p>
                     )}
 
@@ -973,6 +1037,7 @@ function IssueDialog({
                         disabled={
                             form.processing ||
                             invalidRows > 0 ||
+                            missingReasons > 0 ||
                             nothingToIssue ||
                             (form.data.signature_type === 'esign' && !agreed) ||
                             !signatureReady(

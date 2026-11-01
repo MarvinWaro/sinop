@@ -453,15 +453,15 @@ class SupplyLedgerCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Date");
-        $sheet->setCellValue("B{$currentRow}", "Reference");
+        $sheet->setCellValue("A{$currentRow}", "DATE");
+        $sheet->setCellValue("B{$currentRow}", "REFERENCE");
         $sheet->mergeCells("C{$currentRow}:E{$currentRow}");
-        $sheet->setCellValue("C{$currentRow}", "Receipt");
+        $sheet->setCellValue("C{$currentRow}", "RECEIPT");
         $sheet->mergeCells("F{$currentRow}:H{$currentRow}");
-        $sheet->setCellValue("F{$currentRow}", "Issue");
+        $sheet->setCellValue("F{$currentRow}", "ISSUE");
         $sheet->mergeCells("I{$currentRow}:K{$currentRow}");
-        $sheet->setCellValue("I{$currentRow}", "Balance");
-        $sheet->setCellValue("L{$currentRow}", "No. of Days\nto Consume");
+        $sheet->setCellValue("I{$currentRow}", "BALANCE");
+        $sheet->setCellValue("L{$currentRow}", "NO. OF DAYS\nTO CONSUME");
 
         $headerRange = "A{$currentRow}:L{$currentRow}";
         $sheet->getStyle($headerRange)->applyFromArray([
@@ -485,15 +485,15 @@ class SupplyLedgerCardController extends Controller
         $subHeaders = [
             'A' => "",
             'B' => "",
-            'C' => "Qty.",
-            'D' => "Unit Cost",
-            'E' => "Total Cost",
-            'F' => "Qty.",
-            'G' => "Unit Cost",
-            'H' => "Total Cost",
-            'I' => "Qty.",
-            'J' => "Unit Cost",
-            'K' => "Total Cost",
+            'C' => "QTY.",
+            'D' => "UNIT COST",
+            'E' => "TOTAL COST",
+            'F' => "QTY.",
+            'G' => "UNIT COST",
+            'H' => "TOTAL COST",
+            'I' => "QTY.",
+            'J' => "UNIT COST",
+            'K' => "TOTAL COST",
             'L' => ""
         ];
 

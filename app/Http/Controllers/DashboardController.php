@@ -376,16 +376,14 @@ class DashboardController extends Controller
         ]);
     }
 
-    // Keep your existing assets method unchanged
     public function assets()
     {
-        $totalUsers = User::count();
-        $lastUpdated = User::orderBy('updated_at', 'desc')->value('updated_at');
-
         $activeProperties = Property::where('properties.excluded', 0);
 
         $totalProperties = (clone $activeProperties)->count();
         $totalLocations = Location::where('excluded', 0)->count();
+        // People accountable for at least one property.
+        $totalHolders = (clone $activeProperties)->whereNotNull('user_id')->distinct()->count('user_id');
 
         // Real breakdowns replace the hardcoded demo charts of the Blade page.
         $byCondition = (clone $activeProperties)
@@ -405,27 +403,36 @@ class DashboardController extends Controller
             ->selectRaw('locations.location_name as label, COUNT(*) as total')
             ->groupBy('locations.location_name')
             ->orderByDesc('total')
-            ->limit(8)
+            ->limit(6)
             ->get();
 
         $recentProperties = (clone $activeProperties)
-            ->with(['user:id,name', 'location:id,location_name'])
+            ->with(['user:id,name,profile_photo_path', 'location:id,location_name', 'images:id,property_id,file_path'])
             ->latest('updated_at')
-            ->limit(6)
-            ->get(['id', 'property_number', 'item_name', 'condition', 'user_id', 'location_id', 'created_at', 'updated_at']);
+            ->limit(8)
+            ->get(['id', 'property_number', 'item_name', 'condition', 'user_id', 'location_id', 'updated_at'])
+            ->map(fn (Property $property) => [
+                'id' => $property->id,
+                'property_number' => $property->property_number,
+                'item_name' => $property->item_name,
+                'condition' => $property->condition,
+                'holder' => $property->user?->name,
+                'holder_avatar' => $property->user?->avatar,
+                'location' => $property->location?->location_name,
+                'image_url' => $property->images->first()?->url,
+                'updated_at' => $property->updated_at,
+            ]);
 
         return Inertia::render('assets/dashboard', [
-            'totalUsers' => $totalUsers,
-            'lastUpdated' => $lastUpdated ? Carbon::parse($lastUpdated)->diffForHumans() : null,
             'totalProperties' => $totalProperties,
             'totalLocations' => $totalLocations,
+            'totalHolders' => $totalHolders,
             'byCondition' => $byCondition,
             'byFund' => $byFund,
             'byLocation' => $byLocation,
             'recentProperties' => $recentProperties,
         ]);
     }
-
 
     /**
      * Switch admin/cao to user mode for requesting supplies

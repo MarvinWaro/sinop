@@ -24,5 +24,8 @@ export const columnTones = {
     },
 } as const;
 
-/** Shared header row background for the card tables. */
-export const cardTableHead = 'bg-muted/60';
+/** Shared header rows for the card tables: column titles centred and in capitals, as on the forms. */
+export const cardTableHead = 'bg-muted/60 text-xs uppercase [&_th]:text-center';
+
+/** Card table rows: every value centred, as on the old CIMS screens and the printed forms. */
+export const cardTableBody = '[&_td]:text-center';

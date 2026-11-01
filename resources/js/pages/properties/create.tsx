@@ -7,9 +7,18 @@ import type { Location, UserOption } from '@/types';
 type Props = {
     locations: Location[];
     users: UserOption[];
+    conditions: string[];
+    canAddLocations: boolean;
+    canAddConditions: boolean;
 };
 
-export default function PropertyCreate({ locations, users }: Props) {
+export default function PropertyCreate({
+    locations,
+    users,
+    conditions,
+    canAddLocations,
+    canAddConditions,
+}: Props) {
     return (
         <>
             <Head title="Add property" />
@@ -18,7 +27,13 @@ export default function PropertyCreate({ locations, users }: Props) {
                     title="Add property"
                     description="Register equipment or furniture and assign it to an employee (MR)"
                 />
-                <PropertyForm locations={locations} users={users} />
+                <PropertyForm
+                    locations={locations}
+                    users={users}
+                    conditions={conditions}
+                    canAddLocations={canAddLocations}
+                    canAddConditions={canAddConditions}
+                />
             </PageContainer>
         </>
     );

@@ -663,7 +663,7 @@ export default function RequestCreate({ supplies, departments }: Props) {
                             </div>
                         </section>
 
-                        <aside className="min-w-0 rounded-lg border bg-card lg:sticky lg:top-6">
+                        <aside className="min-w-0 rounded-lg border bg-card lg:sticky lg:top-22">
                             <div className="flex items-baseline justify-between gap-2 border-b px-4 py-3">
                                 <h2 className="font-medium">Your request</h2>
                                 <span className="text-xs text-muted-foreground tabular-nums">
@@ -797,7 +797,7 @@ export default function RequestCreate({ supplies, departments }: Props) {
                             </p>
                         </section>
 
-                        <aside className="grid min-w-0 gap-5 lg:sticky lg:top-6">
+                        <aside className="grid min-w-0 gap-5 lg:sticky lg:top-22">
                             <section className="grid gap-4 rounded-lg border bg-card p-4">
                                 <h2 className="font-medium">Details</h2>
                                 <FormField

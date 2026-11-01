@@ -135,6 +135,7 @@ export default function RsmiDetailed(props: Props) {
                             month={props.month}
                             fundClusters={props.fundClusters}
                             fundCluster={fundCluster}
+                            autoApply
                         />
                         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <SearchInput

@@ -1,7 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, FileSpreadsheet, Package } from 'lucide-react';
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { EmptyState } from '@/components/empty-state';
 import { FormSelect } from '@/components/form-select';
 import { PageContainer, PageHeader } from '@/components/page-header';
@@ -62,15 +61,26 @@ const semesterLabel = (semester: string) => (semester === '1' ? '1st' : '2nd');
 export default function RpciReport(props: Props) {
     const can = useCan();
     const { reportData, summary, fundCluster } = props;
-    const years =
-        props.availableYears.length > 0 ? props.availableYears : [props.year];
+    // The year on screen is always a choice, even one with no transactions.
+    const years = props.availableYears.map(String);
+    const yearOptions = years.includes(String(props.year))
+        ? years
+        : [...years, String(props.year)].sort((a, b) => b.localeCompare(a));
     const [year, setYear] = useState(String(props.year));
     const [semester, setSemester] = useState(props.semester);
     const [cluster, setCluster] = useState(fundCluster ?? '');
 
-    const apply = (event: FormEvent) => {
-        event.preventDefault();
-        router.get(generate.url(), { year, semester, fund_cluster: cluster });
+    // Each pick reloads the report straight away (no "Apply filters" button).
+    const visit = (next: {
+        year?: string;
+        semester?: string;
+        fund_cluster?: string;
+    }) => {
+        router.get(
+            generate.url(),
+            { year, semester, fund_cluster: cluster, ...next },
+            { preserveScroll: true },
+        );
     };
 
     const exportQuery = {
@@ -121,19 +131,19 @@ export default function RpciReport(props: Props) {
 
                 <Card className="py-4">
                     <CardContent className="px-4">
-                        <form
-                            onSubmit={apply}
-                            className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                        >
+                        <div className="grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-3">
                             <div className="grid gap-2">
                                 <Label htmlFor="filter_year">Year</Label>
                                 <FormSelect
                                     id="filter_year"
                                     value={year}
-                                    onValueChange={(value) => setYear(value)}
-                                    options={years.map((y) => ({
+                                    onValueChange={(value) => {
+                                        setYear(value);
+                                        visit({ year: value });
+                                    }}
+                                    options={yearOptions.map((y) => ({
                                         value: y,
-                                        label: String(y),
+                                        label: y,
                                     }))}
                                 />
                             </div>
@@ -144,9 +154,10 @@ export default function RpciReport(props: Props) {
                                 <FormSelect
                                     id="filter_semester"
                                     value={semester}
-                                    onValueChange={(value) =>
-                                        setSemester(value)
-                                    }
+                                    onValueChange={(value) => {
+                                        setSemester(value);
+                                        visit({ semester: value });
+                                    }}
                                     options={[
                                         {
                                             value: '1',
@@ -166,7 +177,10 @@ export default function RpciReport(props: Props) {
                                 <FormSelect
                                     id="filter_fund_cluster"
                                     value={cluster}
-                                    onValueChange={(value) => setCluster(value)}
+                                    onValueChange={(value) => {
+                                        setCluster(value);
+                                        visit({ fund_cluster: value });
+                                    }}
                                     options={[
                                         {
                                             value: '',
@@ -179,10 +193,7 @@ export default function RpciReport(props: Props) {
                                     ]}
                                 />
                             </div>
-                            <Button type="submit" variant="secondary">
-                                Apply filters
-                            </Button>
-                        </form>
+                        </div>
                     </CardContent>
                 </Card>
 

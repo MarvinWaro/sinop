@@ -50,17 +50,17 @@ export default function LocationsIndex({ locations, filters }: Props) {
 
     return (
         <>
-            <Head title="Locations" />
+            <Head title="Property locations" />
             <div className="space-y-6">
                 <Heading
                     variant="small"
-                    title="Locations"
-                    description="Where properties are kept or assigned"
+                    title="Property locations"
+                    description="Where properties are kept or assigned. Admins can also add one while adding a property."
                     actions={
                         can('locations.create') && (
                             <Button onClick={() => setEditing('new')}>
                                 <Plus />
-                                Add location
+                                Add property location
                             </Button>
                         )
                     }
@@ -71,7 +71,7 @@ export default function LocationsIndex({ locations, filters }: Props) {
                         <SearchForm
                             url={locationsIndex.url()}
                             defaultValue={filters.search}
-                            placeholder="Search locations..."
+                            placeholder="Search property locations..."
                         />
                     </div>
 
@@ -80,7 +80,7 @@ export default function LocationsIndex({ locations, filters }: Props) {
                             <TableHeader>
                                 <TableRow>
                                     <TableHead className="w-16">ID</TableHead>
-                                    <TableHead>Location name</TableHead>
+                                    <TableHead>Property location</TableHead>
                                     <TableHead className="w-28 text-right">
                                         Actions
                                     </TableHead>
@@ -92,7 +92,7 @@ export default function LocationsIndex({ locations, filters }: Props) {
                                         <TableCell colSpan={3}>
                                             <EmptyState
                                                 icon={MapPin}
-                                                title="No locations found"
+                                                title="No property locations found"
                                             />
                                         </TableCell>
                                     </TableRow>
@@ -155,13 +155,13 @@ export default function LocationsIndex({ locations, filters }: Props) {
             <ConfirmDialog
                 open={deletion.target !== null}
                 onOpenChange={(open) => !open && deletion.cancel()}
-                title="Delete location?"
+                title="Delete property location?"
                 description={
                     deletion.target
                         ? `“${deletion.target.location_name}” will be removed from the list.`
                         : undefined
                 }
-                confirmLabel="Delete location"
+                confirmLabel="Delete property location"
                 destructive
                 processing={deletion.processing}
                 onConfirm={deletion.confirm}
@@ -171,7 +171,7 @@ export default function LocationsIndex({ locations, filters }: Props) {
 }
 
 LocationsIndex.layout = {
-    breadcrumbs: [{ title: 'Locations', href: locationsIndex() }],
+    breadcrumbs: [{ title: 'Property locations', href: locationsIndex() }],
 };
 
 function NameForm({
@@ -199,14 +199,16 @@ function NameForm({
         <form onSubmit={submit} className="grid gap-4">
             <DialogHeader>
                 <DialogTitle>
-                    {item ? 'Edit location' : 'Add location'}
+                    {item ? 'Edit property location' : 'Add property location'}
                 </DialogTitle>
                 <DialogDescription>
-                    {item ? 'Rename this location.' : 'Create a new location.'}
+                    {item
+                        ? 'Rename this property location.'
+                        : 'Where a property is kept, e.g. “ICT room, 3rd floor”.'}
                 </DialogDescription>
             </DialogHeader>
             <FormField
-                label="Location name"
+                label="Property location"
                 htmlFor="location_name"
                 error={form.errors.location_name}
                 required
@@ -217,7 +219,7 @@ function NameForm({
                     onChange={(e) =>
                         form.setData('location_name', e.target.value)
                     }
-                    placeholder="Enter location name"
+                    placeholder="e.g. ICT room, 3rd floor"
                     required
                     autoFocus
                 />
@@ -227,7 +229,7 @@ function NameForm({
                     Cancel
                 </Button>
                 <Button type="submit" disabled={form.processing}>
-                    {item ? 'Save changes' : 'Add location'}
+                    {item ? 'Save changes' : 'Add property location'}
                 </Button>
             </DialogFooter>
         </form>

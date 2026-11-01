@@ -28,6 +28,12 @@ final class Uploads
         return Storage::disk(self::diskName());
     }
 
+    /** A saved e-signature or a copy frozen on an RIS. */
+    public static function isSignature(string $path): bool
+    {
+        return str_starts_with($path, 'signatures/') || str_starts_with($path, 'ris-signatures/');
+    }
+
     /** Where the browser loads the file from; null when there is none. */
     public static function url(?string $path): ?string
     {

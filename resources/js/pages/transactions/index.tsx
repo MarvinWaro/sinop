@@ -4,7 +4,9 @@ import {
     ChevronRight,
     Eye,
     History,
+    Pencil,
     ScrollText,
+    Trash2,
 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -15,12 +17,19 @@ import { PageContainer, PageHeader } from '@/components/page-header';
 import { visitWithQuery } from '@/components/search-form';
 import { TransactionTypeBadge } from '@/components/status-badges';
 import { TablePanel } from '@/components/table-panel';
+import {
+    CorrectTransactionDialog,
+    DeleteTransactionDialog,
+    isCorrectable,
+    RenumberIarDialog,
+} from '@/components/transactions/transaction-corrections';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
     DialogDescription,
+    DialogFooter,
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
@@ -98,6 +107,52 @@ function signedQuantity(
     return formatNumber(line.quantity);
 }
 
+/** What an admin may do to a line (correct it, delete it). */
+type Corrections = {
+    onEdit?: (line: TransactionLine) => void;
+    onDelete?: (line: TransactionLine) => void;
+};
+
+/** Edit and delete buttons for a line, when allowed. */
+function CorrectionActions({
+    line,
+    onEdit,
+    onDelete,
+}: Corrections & { line: TransactionLine }) {
+    if (!isCorrectable(line)) {
+        return null;
+    }
+
+    return (
+        <>
+            {onEdit && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => onEdit(line)}
+                    aria-label={`Correct transaction #${line.transaction_id}`}
+                    title="Correct"
+                >
+                    <Pencil />
+                </Button>
+            )}
+            {onDelete && (
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-destructive hover:text-destructive"
+                    onClick={() => onDelete(line)}
+                    aria-label={`Delete transaction #${line.transaction_id}`}
+                    title="Delete"
+                >
+                    <Trash2 />
+                </Button>
+            )}
+        </>
+    );
+}
+
 function dateRange(from: string, to: string): string {
     return from === to
         ? formatDate(to)
@@ -116,6 +171,14 @@ export default function TransactionsIndex(props: Props) {
         fund: filters.fund ?? '',
     });
     const [viewing, setViewing] = useState<TransactionLine | null>(null);
+    const [editing, setEditing] = useState<TransactionLine | null>(null);
+    const [deleting, setDeleting] = useState<TransactionLine | null>(null);
+    const [renumbering, setRenumbering] = useState<string | null>(null);
+    // Admins correct recorded lines here, never in the database.
+    const corrections: Corrections = {
+        onEdit: can('transactions.update') ? setEditing : undefined,
+        onDelete: can('transactions.delete') ? setDeleting : undefined,
+    };
 
     const visit = (next: Partial<typeof values> & { view?: View }) =>
         visitWithQuery(transactionsIndex.url(), {
@@ -296,12 +359,19 @@ export default function TransactionsIndex(props: Props) {
                             canOpenRis={can('ris.view')}
                             canOpenStockCard={can('stock-cards.view')}
                             onView={setViewing}
+                            corrections={corrections}
+                            onRenumber={
+                                can('transactions.update')
+                                    ? setRenumbering
+                                    : undefined
+                            }
                         />
                     ) : (
                         props.txns && (
                             <LinesTable
                                 txns={props.txns}
                                 onView={setViewing}
+                                corrections={corrections}
                                 onReference={(reference) =>
                                     visit({
                                         search: reference,
@@ -386,10 +456,54 @@ export default function TransactionsIndex(props: Props) {
                                     {viewing.remarks || 'No remarks'}
                                 </p>
                             </div>
+                            {isCorrectable(viewing) &&
+                                (corrections.onEdit ||
+                                    corrections.onDelete) && (
+                                    <DialogFooter>
+                                        {corrections.onDelete && (
+                                            <Button
+                                                variant="outline"
+                                                className="text-destructive hover:text-destructive"
+                                                onClick={() => {
+                                                    setDeleting(viewing);
+                                                    setViewing(null);
+                                                }}
+                                            >
+                                                <Trash2 />
+                                                Delete
+                                            </Button>
+                                        )}
+                                        {corrections.onEdit && (
+                                            <Button
+                                                onClick={() => {
+                                                    setEditing(viewing);
+                                                    setViewing(null);
+                                                }}
+                                            >
+                                                <Pencil />
+                                                Correct
+                                            </Button>
+                                        )}
+                                    </DialogFooter>
+                                )}
                         </>
                     )}
                 </DialogContent>
             </Dialog>
+
+            <CorrectTransactionDialog
+                line={editing}
+                divisions={props.divisions}
+                onClose={() => setEditing(null)}
+            />
+            <DeleteTransactionDialog
+                line={deleting}
+                onClose={() => setDeleting(null)}
+            />
+            <RenumberIarDialog
+                reference={renumbering}
+                onClose={() => setRenumbering(null)}
+            />
         </>
     );
 }
@@ -407,11 +521,15 @@ function DocumentsTable({
     canOpenRis,
     canOpenStockCard,
     onView,
+    corrections,
+    onRenumber,
 }: {
     documents: Paginated<SupplyTransactionDocument>;
     canOpenRis: boolean;
     canOpenStockCard: boolean;
     onView: (line: TransactionLine) => void;
+    corrections: Corrections;
+    onRenumber?: (reference: string) => void;
 }) {
     const [open, setOpen] = useState<Set<string>>(new Set());
     const allOpen =
@@ -579,12 +697,36 @@ function DocumentsTable({
                                                     colSpan={10}
                                                     className="bg-muted/30 p-3"
                                                 >
+                                                    {onRenumber &&
+                                                        doc.transaction_type ===
+                                                            'receipt' &&
+                                                        doc.reference_no && (
+                                                            <div className="mb-2 flex justify-end">
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="sm"
+                                                                    onClick={() =>
+                                                                        doc.reference_no &&
+                                                                        onRenumber(
+                                                                            doc.reference_no,
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    <Pencil />
+                                                                    Change IAR
+                                                                    no.
+                                                                </Button>
+                                                            </div>
+                                                        )}
                                                     <DocumentLines
                                                         doc={doc}
                                                         canOpenStockCard={
                                                             canOpenStockCard
                                                         }
                                                         onView={onView}
+                                                        corrections={
+                                                            corrections
+                                                        }
                                                     />
                                                 </TableCell>
                                             </TableRow>
@@ -604,10 +746,12 @@ function DocumentLines({
     doc,
     canOpenStockCard,
     onView,
+    corrections,
 }: {
     doc: SupplyTransactionDocument;
     canOpenStockCard: boolean;
     onView: (line: TransactionLine) => void;
+    corrections: Corrections;
 }) {
     const spansDates = doc.date_from !== doc.date_to;
 
@@ -709,6 +853,10 @@ function DocumentLines({
                                         >
                                             <Eye />
                                         </Button>
+                                        <CorrectionActions
+                                            line={line}
+                                            {...corrections}
+                                        />
                                     </div>
                                 </td>
                             </tr>
@@ -728,10 +876,12 @@ function LinesTable({
     txns,
     onView,
     onReference,
+    corrections,
 }: {
     txns: Paginated<SupplyTransaction>;
     onView: (line: TransactionLine) => void;
     onReference: (reference: string) => void;
+    corrections: Corrections;
 }) {
     return (
         <TablePanel>
@@ -823,14 +973,22 @@ function LinesTable({
                                         {formatDateTime(txn.created_at)}
                                     </TableCell>
                                     <TableCell className="text-right">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => onView(txn)}
-                                            aria-label="View transaction"
-                                        >
-                                            <Eye />
-                                        </Button>
+                                        <div className="flex justify-end gap-0.5">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="size-7"
+                                                onClick={() => onView(txn)}
+                                                aria-label="View transaction"
+                                                title="Details"
+                                            >
+                                                <Eye />
+                                            </Button>
+                                            <CorrectionActions
+                                                line={txn}
+                                                {...corrections}
+                                            />
+                                        </div>
                                     </TableCell>
                                 </TableRow>
                             );

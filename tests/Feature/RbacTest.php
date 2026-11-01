@@ -33,13 +33,17 @@ test('the roles migration fills in roles from users.role and is safe to run agai
     seedMigration()->up();
     seedMigration()->up(); // a second run adds nothing and fails on nothing
 
-    expect(Permission::count())->toBe(61)
+    // 61 seeded, plus the 4 property-condition permissions,
+    // messages.office and transactions.update/delete added later.
+    expect(Permission::count())->toBe(68)
         ->and(DB::table('role_user')->count())->toBe(4)
         ->and($admin->fresh()->roles->pluck('slug')->all())->toBe(['admin'])
         ->and($cao->fresh()->roles->pluck('slug')->all())->toBe(['cao'])
         ->and($staff->fresh()->roles->pluck('slug')->all())->toBe(['staff'])
         ->and($odd->fresh()->roles->pluck('slug')->all())->toBe(['staff'])
-        ->and(Role::where('slug', 'cao')->first()->permissions()->count())->toBe(47)
+        // 47, plus the property-condition ones (the CAO keeps property locations)
+        // and messages.office (the CAO approves requests).
+        ->and(Role::where('slug', 'cao')->first()->permissions()->count())->toBe(52)
         ->and(Role::where('slug', 'staff')->first()->permissions()->pluck('slug')->all())->toBe(['ris.request']);
 });
 
@@ -202,7 +206,9 @@ test('the Supply and Procurement Officer runs the supply office but not the admi
 
     $role = Role::where('slug', 'supply-officer')->sole();
     expect($role->name)->toBe('Supply and Procurement Officer')
-        ->and($role->permissions()->count())->toBe(42);
+        // 42, plus the property-condition ones (it keeps property locations)
+        // and messages.office (it issues requests).
+        ->and($role->permissions()->count())->toBe(47);
 
     $officer = User::factory()->create();
     $officer->roles()->sync([roleId('staff'), $role->id]);

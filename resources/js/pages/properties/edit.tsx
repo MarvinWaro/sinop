@@ -8,9 +8,19 @@ type Props = {
     property: Property;
     locations: Location[];
     users: UserOption[];
+    conditions: string[];
+    canAddLocations: boolean;
+    canAddConditions: boolean;
 };
 
-export default function PropertyEdit({ property, locations, users }: Props) {
+export default function PropertyEdit({
+    property,
+    locations,
+    users,
+    conditions,
+    canAddLocations,
+    canAddConditions,
+}: Props) {
     return (
         <>
             <Head title={`Edit ${property.item_name}`} />
@@ -23,6 +33,9 @@ export default function PropertyEdit({ property, locations, users }: Props) {
                     property={property}
                     locations={locations}
                     users={users}
+                    conditions={conditions}
+                    canAddLocations={canAddLocations}
+                    canAddConditions={canAddConditions}
                 />
             </PageContainer>
         </>

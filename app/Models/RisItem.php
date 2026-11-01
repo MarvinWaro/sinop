@@ -2,10 +2,9 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use App\Models\Department;
 
 class RisItem extends Model
 {
@@ -28,6 +27,7 @@ class RisItem extends Model
         'quantity_issued' => 'integer',
     ];
 
+    /** @return BelongsTo<RisSlip, $this> */
     public function risSlip(): BelongsTo
     {
         return $this->belongsTo(RisSlip::class, 'ris_id', 'ris_id');
@@ -38,5 +38,4 @@ class RisItem extends Model
     {
         return $this->belongsTo(Supply::class, 'supply_id', 'supply_id');
     }
-    
 }

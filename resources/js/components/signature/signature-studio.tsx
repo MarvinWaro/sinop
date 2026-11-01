@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import InputError from '@/components/input-error';
 import { PlacementEditor } from '@/components/signature/placement-editor';
 import { RisFormPreview } from '@/components/signature/ris-form-preview';
+import { guardImage } from '@/components/signature/signature-box';
 import SignatureCreatorDialog from '@/components/signature/signature-creator-dialog';
 import { SignatureLibrary } from '@/components/signature/signature-library';
 import { Button } from '@/components/ui/button';
@@ -223,6 +224,7 @@ export default function SignatureStudio({
                                         <img
                                             src={selected.url}
                                             alt=""
+                                            {...guardImage}
                                             className="max-h-full max-w-full object-contain"
                                         />
                                     </span>

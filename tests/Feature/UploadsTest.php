@@ -15,7 +15,7 @@ beforeEach(function () {
     Storage::fake('s3');
 });
 
-test('an e-signature goes to the bucket and signed-in users load it through the app', function () {
+test('an e-signature goes to the bucket and only its owner loads it, never cached', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)->postJson(route('signatures.store'), [
@@ -27,11 +27,14 @@ test('an e-signature goes to the bucket and signed-in users load it through the 
     Storage::disk('public')->assertMissing($path);
     expect($user->fresh()->signature_url)->toBe('/files/'.$path);
 
-    $this->actingAs(User::factory()->create())
+    $this->actingAs($user)
         ->get('/files/'.$path)
         ->assertOk()
         ->assertHeader('Content-Type', 'image/png')
-        ->assertHeader('Cache-Control', 'immutable, max-age=31536000, private');
+        ->assertHeader('Cache-Control', 'no-store, private');
+
+    // Someone else, even with the link: as if it weren't there.
+    $this->actingAs(User::factory()->admin()->create())->get('/files/'.$path)->assertNotFound();
 
     $this->actingAs($user)->deleteJson(route('signatures.destroy', $user->signatures()->sole()))->assertOk();
     Storage::disk('s3')->assertMissing($path);
@@ -56,14 +59,16 @@ test('a profile photo goes to the bucket', function () {
 });
 
 test('files are only for signed-in users and only from the upload folders', function () {
-    Storage::disk('s3')->put('signatures/a.png', 'png');
+    Storage::disk('s3')->put('profile-photos/a.png', 'png');
     Storage::disk('s3')->put('qrcodes/b.png', 'png');
 
-    $this->get('/files/signatures/a.png')->assertRedirect(route('login'));
+    $this->get('/files/profile-photos/a.png')->assertRedirect(route('login'));
 
     $this->actingAs(User::factory()->create());
-    $this->get('/files/signatures/a.png')->assertOk();
-    $this->get('/files/signatures/missing.png')->assertNotFound();
+    $this->get('/files/profile-photos/a.png')
+        ->assertOk()
+        ->assertHeader('Cache-Control', 'immutable, max-age=31536000, private');
+    $this->get('/files/profile-photos/missing.png')->assertNotFound();
     $this->get('/files/qrcodes/b.png')->assertNotFound();
     $this->get('/files/signatures/..%2F.env')->assertNotFound();
 });

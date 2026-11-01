@@ -2,8 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Transactions\CorrectTransaction;
+use App\Actions\Transactions\DeleteTransaction;
+use App\Actions\Transactions\RenumberIar;
 use App\Enums\ActivityAction;
 use App\Enums\ActivityModule;
+use App\Http\Requests\Transactions\DeleteSupplyTransactionRequest;
+use App\Http\Requests\Transactions\RenumberIarRequest;
+use App\Http\Requests\Transactions\UpdateSupplyTransactionRequest;
 use App\Models\Department;
 use App\Models\RisSlip;
 use App\Models\Supply;
@@ -13,6 +19,7 @@ use App\Models\User;
 use App\Services\ActivityRecorder;
 use App\Services\ReferenceNumberService;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -317,6 +324,37 @@ class SupplyTransactionController extends Controller
         });
 
         return back()->with('success', 'Transaction recorded successfully.');
+    }
+
+    /**
+     * Corrects a recorded receipt or issue line (admins; a reason is
+     * required). Stock on hand, later balances and the RIS follow.
+     */
+    public function update(UpdateSupplyTransactionRequest $request, SupplyTransaction $transaction, CorrectTransaction $correct): RedirectResponse
+    {
+        $changed = $correct->handle($transaction, $request->validated(), (string) $request->validated('reason'));
+
+        return $changed
+            ? back()->with('success', "Transaction #{$transaction->getKey()} updated.")
+            : back()->with('info', 'Nothing was changed.');
+    }
+
+    /** Deletes a receipt or issue line recorded by mistake (admins; with a reason). */
+    public function destroy(DeleteSupplyTransactionRequest $request, SupplyTransaction $transaction, DeleteTransaction $delete): RedirectResponse
+    {
+        $delete->handle($transaction, (string) $request->validated('reason'));
+
+        return back()->with('deleted', "Transaction #{$transaction->getKey()} deleted.");
+    }
+
+    /** Gives a whole IAR (all its receipt lines) a corrected number. */
+    public function renumber(RenumberIarRequest $request, RenumberIar $renumber): RedirectResponse
+    {
+        $from = (string) $request->validated('from');
+        $to = (string) $request->validated('to');
+        $count = $renumber->handle($from, $to, (string) $request->validated('reason'));
+
+        return back()->with('success', "{$from} changed to {$to}: {$count} ".($count === 1 ? 'line' : 'lines').' updated.');
     }
 
     /**

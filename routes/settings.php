@@ -38,6 +38,8 @@ Route::middleware(['auth', 'verified', 'admin-cao', 'admin.not-user-mode'])->gro
 
     Route::get('settings/roles', [RoleController::class, 'index'])->name('roles.index')->middleware('can:roles.view');
     Route::post('settings/roles', [RoleController::class, 'store'])->name('roles.store')->middleware('can:roles.create');
+    // The permission matrix: several roles at once (listed before {role}).
+    Route::put('settings/roles/permissions', [RoleController::class, 'permissions'])->name('roles.permissions')->middleware('can:roles.update');
     Route::put('settings/roles/{role}', [RoleController::class, 'update'])->name('roles.update')->middleware('can:roles.update');
     Route::delete('settings/roles/{role}', [RoleController::class, 'destroy'])->name('roles.destroy')->middleware('can:roles.delete');
 

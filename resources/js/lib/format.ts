@@ -261,6 +261,35 @@ export function formatTime(
     return `${pad2(h12)}:${pad2(clock.minutes)} ${clock.hours >= 12 ? 'PM' : 'AM'}`;
 }
 
+const WEEKDAYS = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+];
+
+/** "Saturday, Oct 31, 2026 · 04:41 PM" */
+export function formatDayDateTime(
+    value: string | null | undefined,
+    fallback = '—',
+): string {
+    const clock = wallClock(value);
+
+    if (!clock) {
+        return fallback;
+    }
+
+    const weekday =
+        WEEKDAYS[
+            new Date(Date.UTC(clock.year, clock.month, clock.day)).getUTCDay()
+        ];
+
+    return `${weekday}, ${formatDate(value)} · ${formatTime(value)}`;
+}
+
 /** "Mar 14, 2025 02:30 PM" */
 export function formatDateTime(
     value: string | null | undefined,

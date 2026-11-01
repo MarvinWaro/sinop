@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\RisSlip;
+use App\Services\Messenger;
 use App\Services\NotificationInbox;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,7 +28,7 @@ class HandleInertiaRequests extends Middleware
      */
     protected array $legacyFlashKeys = [
         'success' => 'success',
-        'deleted' => 'success',
+        'deleted' => 'deleted',
         'signature_success' => 'success',
         'error' => 'error',
         'warning' => 'warning',
@@ -82,6 +83,8 @@ class HandleInertiaRequests extends Middleware
             'notifications' => fn () => $user ? $this->notificationCounts($user->id, $isAdmin) : null,
             // The bell: unread count and when the newest arrived.
             'inbox' => fn () => $user ? app(NotificationInbox::class)->summary($user) : null,
+            // The Messages badge: messages this person hasn't read.
+            'messagesUnread' => fn () => $user ? app(Messenger::class)->unreadCountFor($user) : 0,
             // Where the browser listens for live updates (Berth's Soketi app).
             // Off until its values are in .env (AppServiceProvider).
             'broadcasting' => fn () => $user ? $this->broadcasting($user->id) : null,

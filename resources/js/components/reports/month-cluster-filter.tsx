@@ -15,6 +15,11 @@ type Props = {
     month: string | null;
     fundClusters: string[];
     fundCluster: string | null;
+    /**
+     * Reload as soon as a month or fund cluster is picked, with no submit
+     * button (for the report pages, where the result is right below).
+     */
+    autoApply?: boolean;
     submitLabel?: ReactNode;
     submitVariant?: 'default' | 'secondary' | 'outline';
     /** Extra query params to keep (e.g. department_id). */
@@ -32,6 +37,7 @@ export function MonthClusterFilter({
     month,
     fundClusters,
     fundCluster,
+    autoApply = false,
     submitLabel = 'Apply filters',
     submitVariant = 'secondary',
     extra = {},
@@ -40,19 +46,23 @@ export function MonthClusterFilter({
     children,
 }: Props) {
     const fallbackMonth = new Date().toISOString().slice(0, 7);
-    const monthOptions = months.length > 0 ? months : [fallbackMonth];
+    const listed = months.length > 0 ? months : [fallbackMonth];
+    // A report page shows `month` even when nothing was issued in it: list it
+    // too, so the picker matches the page and every other month can be picked.
+    const monthOptions =
+        autoApply && month && !listed.includes(month)
+            ? [...listed, month].sort((a, b) => b.localeCompare(a))
+            : listed;
     const [selectedMonth, setSelectedMonth] = useState(
         month && monthOptions.includes(month) ? month : monthOptions[0],
     );
     const [cluster, setCluster] = useState(fundCluster ?? '');
 
-    const submit = (event: FormEvent) => {
-        event.preventDefault();
+    const visit = (nextMonth: string, nextCluster: string) => {
+        const query: Record<string, string | number> = { month: nextMonth };
 
-        const query: Record<string, string | number> = { month: selectedMonth };
-
-        if (cluster) {
-            query.fund_cluster = cluster;
+        if (nextCluster) {
+            query.fund_cluster = nextCluster;
         }
 
         for (const [key, value] of Object.entries(extra)) {
@@ -61,8 +71,36 @@ export function MonthClusterFilter({
             }
         }
 
-        router.get(url, query);
+        // Applied in place: keep the page's own state (e.g. a search) and scroll.
+        router.get(
+            url,
+            query,
+            autoApply ? { preserveState: true, preserveScroll: true } : {},
+        );
     };
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+        visit(selectedMonth, cluster);
+    };
+
+    const pickMonth = (value: string) => {
+        setSelectedMonth(value);
+
+        if (autoApply && value !== selectedMonth) {
+            visit(value, cluster);
+        }
+    };
+
+    const pickCluster = (value: string) => {
+        setCluster(value);
+
+        if (autoApply && value !== cluster) {
+            visit(selectedMonth, value);
+        }
+    };
+
+    const actions = !autoApply || children;
 
     return (
         <form
@@ -71,7 +109,9 @@ export function MonthClusterFilter({
                 'grid gap-3',
                 stacked
                     ? 'gap-4'
-                    : 'items-end sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]',
+                    : actions
+                      ? 'items-end sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]'
+                      : 'items-end sm:grid-cols-2',
             )}
         >
             <div className="grid gap-2">
@@ -79,7 +119,7 @@ export function MonthClusterFilter({
                 <FormSelect
                     id={`${idPrefix}-month`}
                     value={selectedMonth}
-                    onValueChange={(value) => setSelectedMonth(value)}
+                    onValueChange={pickMonth}
                     options={monthOptions.map((key) => ({
                         value: key,
                         label: formatMonthKey(key),
@@ -91,7 +131,7 @@ export function MonthClusterFilter({
                 <FormSelect
                     id={`${idPrefix}-fund-cluster`}
                     value={cluster}
-                    onValueChange={(value) => setCluster(value)}
+                    onValueChange={pickCluster}
                     options={[
                         { value: '', label: 'All fund clusters' },
                         ...fundClusters.map((fc) => ({
@@ -101,12 +141,16 @@ export function MonthClusterFilter({
                     ]}
                 />
             </div>
-            <div className={cn('flex flex-wrap gap-2', stacked && 'pt-2')}>
-                <Button type="submit" variant={submitVariant}>
-                    {submitLabel}
-                </Button>
-                {children}
-            </div>
+            {actions && (
+                <div className={cn('flex flex-wrap gap-2', stacked && 'pt-2')}>
+                    {!autoApply && (
+                        <Button type="submit" variant={submitVariant}>
+                            {submitLabel}
+                        </Button>
+                    )}
+                    {children}
+                </div>
+            )}
         </form>
     );
 }

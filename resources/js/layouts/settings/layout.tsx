@@ -38,7 +38,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
             />
 
             <div className="flex flex-col lg:flex-row lg:space-x-12">
-                <aside className="w-full max-w-xl lg:sticky lg:top-4 lg:w-56 lg:shrink-0 lg:self-start">
+                <aside className="w-full max-w-xl lg:sticky lg:top-20 lg:w-56 lg:shrink-0 lg:self-start">
                     <nav className="flex flex-col gap-5" aria-label="Settings">
                         {groups.map((group) => (
                             <SettingsNavGroup

@@ -9,9 +9,11 @@ import {
 import { useMemo, useState } from 'react';
 import { YearlyIssuanceAnalytics } from '@/components/analytics/yearly-issuance-analytics';
 import type { YearlyData } from '@/components/analytics/yearly-issuance-analytics';
+import { StockXrayBox } from '@/components/analytics/stock-xray-box';
 import {
     BarChart,
     DonutChart,
+    DonutLegend,
     LineChart,
     chartColors,
 } from '@/components/charts';
@@ -476,22 +478,22 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
         others > 0 ? [...top, { label: 'Others', value: others }] : top;
 
     return (
-        <Card className="lg:col-span-8">
-            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <Card className="lg:col-span-6">
+            <CardHeader className="space-y-3">
                 <div className="space-y-1.5">
                     <CardTitle>Division distribution</CardTitle>
                     <CardDescription>
-                        Transactions by division (transactions without a
-                        division are not shown)
+                        Transactions by division. Those without a division
+                        aren't counted.
                     </CardDescription>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-3 gap-2">
                     <FormSelect
                         value={type}
                         onValueChange={(value) =>
                             setType(value as 'all' | TypeKey)
                         }
-                        className="w-36"
+                        className="w-full"
                         aria-label="Type"
                         options={[
                             { value: 'all', label: 'All types' },
@@ -503,7 +505,7 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
                     <FormSelect
                         value={month}
                         onValueChange={(value) => setMonth(value)}
-                        className="w-36"
+                        className="w-full"
                         aria-label="Month"
                         options={[
                             { value: 'all', label: 'All months' },
@@ -516,7 +518,7 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
                     <FormSelect
                         value={year}
                         onValueChange={(value) => setYear(value)}
-                        className="w-28"
+                        className="w-full"
                         aria-label="Year"
                         options={[
                             { value: 'all', label: 'All years' },
@@ -532,12 +534,8 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
                         description="Try a different type, month or year."
                     />
                 ) : (
-                    <div className="grid gap-6 md:grid-cols-2">
-                        <DonutChart
-                            data={chartData}
-                            centerLabel="Transactions"
-                        />
-                        <div className="grid content-start gap-4">
+                    <div className="grid grid-cols-[minmax(0,1fr)] gap-5">
+                        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-6">
                             <Metric
                                 label="Active divisions"
                                 value={formatNumber(slices.length)}
@@ -547,6 +545,12 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
                                 value={slices[0]?.label ?? '—'}
                             />
                         </div>
+                        <DonutChart
+                            data={chartData}
+                            size={170}
+                            orientation="horizontal"
+                            centerLabel="Transactions"
+                        />
                     </div>
                 )}
             </CardContent>
@@ -555,33 +559,52 @@ function DivisionDistribution({ data }: { data: DepartmentData }) {
 }
 
 function StockOverview({ data }: { data: Props['stockStatusData'] }) {
+    const slices = [
+        {
+            label: 'Well stocked',
+            value: data.wellStocked,
+            color: 'oklch(0.6 0.13 150)',
+        },
+        { label: 'Low stock', value: data.lowStock, color: chartColors[3] },
+        {
+            label: 'Out of stock',
+            value: data.outOfStock,
+            color: chartColors[0],
+        },
+    ];
+    const [active, setActive] = useState<number | null>(null);
+    // Without WebGL (or if Three.js can't load), the donut shows instead.
+    const [boxUnavailable, setBoxUnavailable] = useState(false);
+
     return (
-        <Card className="lg:col-span-4">
+        <Card className="lg:col-span-6">
             <CardHeader>
                 <CardTitle>Stock overview</CardTitle>
                 <CardDescription>Current inventory status</CardDescription>
             </CardHeader>
             <CardContent>
-                <DonutChart
-                    centerLabel="Supplies"
-                    data={[
-                        {
-                            label: 'Well stocked',
-                            value: data.wellStocked,
-                            color: 'oklch(0.6 0.13 150)',
-                        },
-                        {
-                            label: 'Low stock',
-                            value: data.lowStock,
-                            color: chartColors[3],
-                        },
-                        {
-                            label: 'Out of stock',
-                            value: data.outOfStock,
-                            color: chartColors[0],
-                        },
-                    ]}
-                />
+                {boxUnavailable ? (
+                    <DonutChart centerLabel="Supplies" data={slices} />
+                ) : (
+                    <div className="flex flex-col items-center gap-4">
+                        <StockXrayBox
+                            slices={slices}
+                            active={active}
+                            onUnavailable={() => setBoxUnavailable(true)}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                            <span className="text-lg font-semibold text-foreground tabular-nums">
+                                {formatNumber(
+                                    data.wellStocked +
+                                        data.lowStock +
+                                        data.outOfStock,
+                                )}
+                            </span>{' '}
+                            supplies
+                        </p>
+                        <DonutLegend data={slices} onActive={setActive} />
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

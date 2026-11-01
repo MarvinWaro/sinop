@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SupplyTransaction extends Model
 {
@@ -36,20 +37,33 @@ class SupplyTransaction extends Model
 
     protected $casts = [
         'transaction_date' => 'date:Y-m-d',
-        'unit_cost'        => 'decimal:2',
-        'total_cost'       => 'decimal:2',
+        'unit_cost' => 'decimal:2',
+        'total_cost' => 'decimal:2',
     ];
 
-    public function supply()     { return $this->belongsTo(Supply::class, 'supply_id'); }
-    public function department() { return $this->belongsTo(Department::class, 'department_id'); }
-    public function user()       { return $this->belongsTo(User::class, 'user_id'); }
+    /** @return BelongsTo<Supply, $this> */
+    public function supply(): BelongsTo
+    {
+        return $this->belongsTo(Supply::class, 'supply_id');
+    }
 
+    /** @return BelongsTo<Department, $this> */
+    public function department(): BelongsTo
+    {
+        return $this->belongsTo(Department::class, 'department_id');
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
 
     public function users()
     {
         return $this->belongsToMany(User::class, 'user_transactions', 'transaction_id', 'user_id')
-                    ->withPivot('role')
-                    ->withTimestamps();
+            ->withPivot('role')
+            ->withTimestamps();
     }
 
     public function requesters()
@@ -61,6 +75,4 @@ class SupplyTransaction extends Model
     {
         return $this->users()->wherePivot('role', 'receiver');
     }
-
-
 }

@@ -1,4 +1,4 @@
-import { usePage } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import {
     ArrowUpRight,
     Building2,
@@ -7,41 +7,28 @@ import {
     Download,
     FileSpreadsheet,
     FileText,
-    ImageIcon,
     Info,
+    MessageCircle,
+    RotateCw,
 } from 'lucide-react';
-import { toast } from 'sonner';
-import type {
-    Attachment,
-    ConversationStatus,
-    SampleConversation,
-    SampleMessage,
-    Side,
-} from '@/components/messages/sample-conversations';
-import { OFFICE_PEOPLE } from '@/components/messages/sample-conversations';
+import { useState } from 'react';
 import { badgeTone, RisStatusBadge } from '@/components/status-badges';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useCan } from '@/hooks/use-can';
+import { Spinner } from '@/components/ui/spinner';
 import { formatDate, formatTime, initialsOf } from '@/lib/format';
+import { risKey } from '@/lib/ris';
 import { cn } from '@/lib/utils';
-
-/**
- * Whose side the viewer is on: the admin side answers for the supply office
- * (the shared inbox); everyone else (and admins in user mode) is a requester.
- */
-export function useMessagesSide(): Side {
-    const { auth } = usePage().props;
-    const can = useCan();
-
-    return can('dashboard.view') && !auth.isAdminUserMode
-        ? 'office'
-        : 'requester';
-}
-
-/** Everything in the preview that would do something says so. */
-export const previewOnly = (what: string) =>
-    toast(`Preview only: ${what} works once Messages is built.`);
+import { show as showRis } from '@/routes/ris';
+import type {
+    ConversationKind,
+    ConversationStatus,
+    ConversationSummary,
+    MessageFile,
+    MessagePerson,
+    Thread,
+    ThreadMessage,
+} from '@/types';
 
 const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
 
@@ -74,6 +61,15 @@ export function dayLabel(iso: string): string {
     return sameDay(date, yesterday) ? 'Yesterday' : formatDate(iso);
 }
 
+/** "2.4 MB", "830 KB". */
+export function fileSize(bytes: number): string {
+    return bytes >= 1024 * 1024
+        ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+        : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+export const firstName = (name: string) => name.split(' ')[0];
+
 const statusTone: Record<ConversationStatus, string> = {
     open: badgeTone.blue,
     waiting: badgeTone.amber,
@@ -93,34 +89,46 @@ export function StatusChip({
         waiting: officeView ? 'Needs reply' : 'Awaiting reply',
         resolved: 'Resolved',
     }[status];
-    const tone = statusTone[status];
 
     return (
         <Badge
             variant="outline"
-            className={cn('px-1.5 py-0 text-[11px] font-medium', tone)}
+            className={cn(
+                'px-1.5 py-0 text-[11px] font-medium',
+                statusTone[status],
+            )}
         >
             {label}
         </Badge>
     );
 }
 
-const kindIcons = { request: ClipboardList, concern: CircleAlert };
+export const kindIcons = {
+    request: ClipboardList,
+    concern: CircleAlert,
+    general: MessageCircle,
+};
 
-export const kindLabels = { request: 'Request', concern: 'Concern' };
+export const kindLabels: Record<ConversationKind, string> = {
+    request: 'Request',
+    concern: 'Concern',
+    general: 'Other',
+};
 
 /** Who a message or conversation is with. */
 export type Person = {
     name: string;
-    role?: string;
+    role?: string | null;
     photo?: string | null;
     /** The supply office as a whole (no one has replied yet). */
     office?: boolean;
 };
 
+export const SUPPLY_OFFICE: Person = { name: 'Supply office', office: true };
+
 /**
  * A person's photo (or initials), or the supply office's mark. The corner
- * badge says what the conversation is about: a request or a concern.
+ * badge says what the conversation is about.
  */
 export function PersonAvatar({
     person,
@@ -129,11 +137,14 @@ export function PersonAvatar({
     className,
 }: {
     person: Person;
-    kind?: SampleConversation['kind'];
+    kind?: ConversationKind;
     size?: 'sm' | 'md';
     className?: string;
 }) {
     const KindIcon = kind ? kindIcons[kind] : null;
+    // A photo whose file is missing shows initials instead of a broken image.
+    const [broken, setBroken] = useState<string | null>(null);
+    const photo = person.photo && person.photo !== broken ? person.photo : null;
 
     return (
         <span
@@ -153,10 +164,11 @@ export function PersonAvatar({
                         : 'bg-muted text-foreground',
                 )}
             >
-                {person.photo ? (
+                {photo ? (
                     <img
-                        src={person.photo}
+                        src={photo}
                         alt=""
+                        onError={() => setBroken(photo)}
                         className="size-full object-cover"
                     />
                 ) : person.office ? (
@@ -173,7 +185,9 @@ export function PersonAvatar({
                         'absolute -right-0.5 -bottom-0.5 flex size-[18px] items-center justify-center rounded-full ring-2 ring-card',
                         kind === 'request'
                             ? 'bg-primary text-primary-foreground'
-                            : 'bg-amber-500 text-white',
+                            : kind === 'concern'
+                              ? 'bg-amber-500 text-white'
+                              : 'bg-muted-foreground text-background',
                     )}
                 >
                     <KindIcon className="size-2.5" />
@@ -183,46 +197,65 @@ export function PersonAvatar({
     );
 }
 
-/** The other side of a conversation, as the viewer sees it. */
+/**
+ * The other side of a conversation, as the viewer sees it: the requester
+ * for the office; for a requester, the officer who replied last (or the
+ * office as a whole).
+ */
 export function otherParty(
-    conversation: SampleConversation,
+    conversation: ConversationSummary,
     officeView: boolean,
 ): Person {
-    if (officeView) {
-        return { ...conversation.requester, role: 'Requester' };
+    if (officeView && !conversation.mine) {
+        return conversation.requester ?? { name: 'Former user' };
     }
 
-    // Staff talk to the office: the last officer who replied, if anyone has.
-    const reply = conversation.messages.findLast(
-        (message) => message.side === 'office' && message.author,
-    );
+    return conversation.replied_by ?? SUPPLY_OFFICE;
+}
 
-    return reply
-        ? { name: reply.author!, role: reply.role }
-        : { name: 'Supply office', office: true };
+/** The newest message, as one line ("You: …", "Juan: …"). */
+function lastLine(conversation: ConversationSummary): string {
+    const { last } = conversation;
+
+    if (!last) {
+        return '';
+    }
+
+    if (last.side === 'system') {
+        return `${last.author ? firstName(last.author.name) : 'Someone'} ${last.body === 'resolved' ? 'marked it resolved' : 'reopened it'}`;
+    }
+
+    const mineSide = conversation.mine ? 'requester' : 'office';
+    const who =
+        last.side === mineSide
+            ? 'You: '
+            : last.author
+              ? `${firstName(last.author.name)}: `
+              : '';
+    const text =
+        last.body ??
+        (last.files === 1 ? 'Sent a file' : `Sent ${last.files} files`);
+
+    return who + text;
 }
 
 export function ConversationRow({
     conversation,
     selected,
     officeView,
+    typing,
     onSelect,
 }: {
-    conversation: SampleConversation;
+    conversation: ConversationSummary;
     selected: boolean;
     officeView: boolean;
+    /** First name of whoever is typing in it right now. */
+    typing?: string | null;
     onSelect: () => void;
 }) {
-    const last = conversation.messages.at(-1)!;
-    const who =
-        last.side === 'system'
-            ? ''
-            : last.side === (officeView ? 'office' : 'requester')
-              ? 'You: '
-              : `${(officeView ? conversation.requester.name : (last.author ?? 'Supply office')).split(' ')[0]}: `;
-    const preview = last.body ?? `Sent ${last.attachment?.name}`;
     const person = otherParty(conversation, officeView);
     const KindIcon = kindIcons[conversation.kind];
+    const unread = conversation.unread > 0;
 
     return (
         <li>
@@ -241,16 +274,16 @@ export function ConversationRow({
                         <span
                             className={cn(
                                 'truncate text-sm',
-                                conversation.unread > 0
-                                    ? 'font-semibold'
-                                    : 'font-medium',
+                                unread ? 'font-semibold' : 'font-medium',
                             )}
                         >
                             {person.name}
                         </span>
-                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                            {listTime(last.at)}
-                        </span>
+                        {conversation.updated_at && (
+                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                {listTime(conversation.updated_at)}
+                            </span>
+                        )}
                     </span>
                     {/* What the conversation is about. */}
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -259,7 +292,7 @@ export function ConversationRow({
                             {kindLabels[conversation.kind]}:
                         </span>
                         <span className="truncate font-medium text-foreground/80">
-                            {conversation.title}
+                            {conversation.subject}
                         </span>
                         {conversation.status !== 'open' && (
                             <StatusChip
@@ -272,17 +305,21 @@ export function ConversationRow({
                         <span
                             className={cn(
                                 'min-w-0 flex-1 truncate text-xs',
-                                conversation.unread > 0
-                                    ? 'text-foreground'
-                                    : 'text-muted-foreground',
+                                typing
+                                    ? 'text-primary'
+                                    : unread
+                                      ? 'text-foreground'
+                                      : 'text-muted-foreground',
                             )}
                         >
-                            {who}
-                            {preview}
+                            {typing
+                                ? `${typing} is typing…`
+                                : lastLine(conversation)}
                         </span>
-                        {conversation.unread > 0 && (
+                        {unread && (
                             <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground tabular-nums">
                                 {conversation.unread}
+                                <span className="sr-only"> unread</span>
                             </span>
                         )}
                     </span>
@@ -302,32 +339,60 @@ export function DayDivider({ label }: { label: string }) {
     );
 }
 
-/** Something that happened to the request (submitted, approved, issued…). */
-export function SystemEvent({ message }: { message: SampleMessage }) {
+/** Something that happened: the request moved on, or the status changed. */
+export function SystemLine({ text, at }: { text: string; at: string }) {
     return (
         <p className="mx-auto flex max-w-full items-center gap-1.5 rounded-full border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
             <Info className="size-3.5 shrink-0" />
-            <span className="truncate">{message.body}</span>
-            <span className="shrink-0 tabular-nums">
-                · {formatTime(message.at)}
-            </span>
+            <span className="truncate">{text}</span>
+            <span className="shrink-0 tabular-nums">· {formatTime(at)}</span>
         </p>
     );
 }
 
+/** A status line's text: "Maria marked it resolved". */
+export function statusLineText(message: ThreadMessage): string {
+    const who = message.mine
+        ? 'You'
+        : message.author
+          ? firstName(message.author.name)
+          : 'Someone';
+
+    return message.body === 'resolved'
+        ? `${who} marked this resolved`
+        : `${who} reopened this`;
+}
+
+/** Who wrote a message, with what they do. */
+export function authorOf(message: ThreadMessage): Person {
+    const fallback = message.side === 'office' ? 'Supply office' : 'Requester';
+
+    return message.author
+        ? {
+              name: message.author.name,
+              photo: message.author.photo,
+              role:
+                  message.side === 'office'
+                      ? (message.author.role ?? 'Supply office')
+                      : 'Requester',
+          }
+        : { name: 'Former user', role: fallback };
+}
+
 export function MessageBubble({
     message,
-    author,
-    mine,
     showAuthor,
     showTime,
+    onRetry,
 }: {
-    message: SampleMessage;
-    author: Person;
-    mine: boolean;
+    message: ThreadMessage;
     showAuthor: boolean;
     showTime: boolean;
+    onRetry?: () => void;
 }) {
+    const { mine, local } = message;
+    const author = authorOf(message);
+
     return (
         <div
             className={cn(
@@ -344,6 +409,7 @@ export function MessageBubble({
                 className={cn(
                     'flex min-w-0 flex-col gap-1',
                     mine ? 'items-end' : 'items-start',
+                    local && !local.failed && 'opacity-70',
                 )}
             >
                 {showAuthor && !mine && (
@@ -357,7 +423,7 @@ export function MessageBubble({
                 {message.body && (
                     <p
                         className={cn(
-                            'rounded-2xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-line',
+                            'rounded-2xl px-3.5 py-2 text-sm leading-relaxed break-words whitespace-pre-line',
                             mine
                                 ? 'rounded-br-md bg-primary text-primary-foreground'
                                 : 'rounded-bl-md bg-muted',
@@ -366,66 +432,122 @@ export function MessageBubble({
                         {message.body}
                     </p>
                 )}
-                {message.attachment && (
-                    <AttachmentCard attachment={message.attachment} />
-                )}
-                {showTime && (
-                    <span className="px-1 text-[11px] text-muted-foreground tabular-nums">
-                        {formatTime(message.at)}
+                {message.attachments.map((file) => (
+                    <AttachmentCard key={file.id} file={file} />
+                ))}
+                {local?.files.map((file) => (
+                    <PendingFile key={file.name} file={file} />
+                ))}
+                {local?.failed ? (
+                    <span className="flex items-center gap-1 px-1 text-[11px] text-destructive">
+                        Not sent.
+                        {onRetry && (
+                            <button
+                                type="button"
+                                onClick={onRetry}
+                                className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+                            >
+                                <RotateCw className="size-3" />
+                                Try again
+                            </button>
+                        )}
                     </span>
+                ) : local ? (
+                    <span className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
+                        <Spinner className="size-3" />
+                        Sending…
+                    </span>
+                ) : (
+                    showTime && (
+                        <span className="px-1 text-[11px] text-muted-foreground tabular-nums">
+                            {formatTime(message.at)}
+                        </span>
+                    )
                 )}
             </div>
         </div>
     );
 }
 
-const attachmentIcons = {
-    sheet: FileSpreadsheet,
-    pdf: FileText,
-    image: ImageIcon,
-};
+const isImage = (mime: string) => mime.startsWith('image/');
 
-export function AttachmentCard({ attachment }: { attachment: Attachment }) {
-    const Icon = attachmentIcons[attachment.kind];
+/** A sent file: photos show as a picture, others as a card to download. */
+export function AttachmentCard({ file }: { file: MessageFile }) {
+    if (isImage(file.mime)) {
+        return (
+            <a
+                href={file.url}
+                target="_blank"
+                rel="noreferrer"
+                className="block overflow-hidden rounded-xl border bg-muted"
+                title={file.name}
+            >
+                <img
+                    src={file.url}
+                    alt={file.name}
+                    loading="lazy"
+                    className="max-h-64 w-auto max-w-full object-contain"
+                />
+            </a>
+        );
+    }
+
+    const Icon = file.mime === 'application/pdf' ? FileText : FileSpreadsheet;
 
     return (
-        <div className="w-64 max-w-full overflow-hidden rounded-xl border bg-card">
-            {attachment.kind === 'image' && (
-                <div className="flex aspect-[4/3] items-center justify-center bg-muted text-muted-foreground">
-                    <ImageIcon className="size-8" />
-                </div>
-            )}
-            <div className="flex items-center gap-3 p-2.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon className="size-4" />
+        <div className="flex w-64 max-w-full items-center gap-3 rounded-xl border bg-card p-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Icon className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                    {file.name}
                 </span>
-                <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                        {attachment.name}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                        {attachment.size}
-                    </span>
+                <span className="text-xs text-muted-foreground">
+                    {fileSize(file.size)}
                 </span>
-                <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-8"
-                    aria-label={`Download ${attachment.name}`}
-                    onClick={() => previewOnly('downloading')}
+            </span>
+            <Button asChild variant="ghost" size="icon" className="size-8">
+                <a
+                    href={file.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Open ${file.name}`}
                 >
                     <Download className="size-4" />
-                </Button>
-            </div>
+                </a>
+            </Button>
         </div>
     );
 }
 
-export function TypingDots({ person }: { person: Person }) {
+/** A file still on its way up. */
+function PendingFile({ file }: { file: File }) {
     return (
-        <div className="flex items-center gap-2 self-start">
-            <PersonAvatar person={person} size="sm" />
+        <div className="flex w-64 max-w-full items-center gap-3 rounded-xl border bg-card p-2.5">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <FileText className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                    {file.name}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                    {fileSize(file.size)}
+                </span>
+            </span>
+        </div>
+    );
+}
+
+export function TypingDots({ name }: { name: string }) {
+    return (
+        <div
+            className="flex items-center gap-2 self-start"
+            role="status"
+            aria-live="polite"
+        >
+            <PersonAvatar person={{ name }} size="sm" />
             <span
                 className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-muted px-3.5 py-3"
                 aria-hidden
@@ -439,21 +561,23 @@ export function TypingDots({ person }: { person: Person }) {
                 ))}
             </span>
             <span className="text-xs text-muted-foreground">
-                {person.name.split(' ')[0]} is typing…
+                {name} is typing…
             </span>
         </div>
     );
 }
 
-/** What the conversation is about: the request, or the concern's details. */
+/** What the conversation is about, and who is in it. */
 export function ContextPanel({
-    conversation,
+    thread,
     officeView,
 }: {
-    conversation: SampleConversation;
+    thread: Thread;
     officeView: boolean;
 }) {
-    const { ris, concern, requester } = conversation;
+    const { context, conversation, office } = thread;
+    const { ris, property } = context;
+    const requester = conversation.requester;
 
     return (
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-6 p-5 text-sm">
@@ -464,45 +588,63 @@ export function ContextPanel({
                         <RisStatusBadge slip={ris} />
                     </div>
                     <dl className="grid grid-cols-[minmax(0,1fr)] gap-1 text-xs">
-                        <Fact
-                            label="Requested"
-                            value={`${formatDate(ris.requested_at)}, ${formatTime(ris.requested_at)}`}
-                        />
-                        <Fact label="Division" value={requester.division} />
+                        {ris.requested_at && (
+                            <Fact
+                                label="Requested"
+                                value={`${formatDate(ris.requested_at)}, ${formatTime(ris.requested_at)}`}
+                            />
+                        )}
+                        {ris.division && (
+                            <Fact label="Division" value={ris.division} />
+                        )}
+                        {ris.purpose && (
+                            <Fact label="Purpose" value={ris.purpose} />
+                        )}
                     </dl>
-                    <ul className="divide-y rounded-lg border">
-                        {ris.items.map((item) => (
-                            <li
-                                key={item.name}
-                                className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
-                            >
-                                <span className="truncate">{item.name}</span>
-                                <span className="shrink-0 text-muted-foreground tabular-nums">
-                                    {item.quantity} {item.unit}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => previewOnly('opening the RIS')}
-                    >
-                        Open RIS
-                        <ArrowUpRight />
+                    {ris.items.length > 0 && (
+                        <ul className="divide-y rounded-lg border">
+                            {ris.items.map((item, index) => (
+                                <li
+                                    key={index}
+                                    className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+                                >
+                                    <span className="truncate">
+                                        {item.name}
+                                    </span>
+                                    <span className="shrink-0 text-muted-foreground tabular-nums">
+                                        {item.quantity} {item.unit}
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                    <Button asChild variant="outline" size="sm">
+                        <Link href={showRis(risKey({ route_key: ris.key }))}>
+                            Open RIS
+                            <ArrowUpRight />
+                        </Link>
                     </Button>
                 </section>
             )}
 
-            {concern && (
+            {property && (
                 <section className="grid grid-cols-[minmax(0,1fr)] gap-3">
-                    <h3 className="font-medium">Concern</h3>
+                    <h3 className="font-medium">Property</h3>
                     <dl className="grid grid-cols-[minmax(0,1fr)] gap-1 text-xs">
-                        <Fact label="Category" value={concern.category} />
-                        <Fact label="About" value={concern.property} />
-                        <Fact label="Reference" value={concern.property_no} />
-                        <Fact label="Location" value={concern.location} />
+                        <Fact label="Item" value={property.name} />
+                        <Fact label="Property no." value={property.number} />
+                        {property.condition && (
+                            <Fact
+                                label="Condition"
+                                value={property.condition}
+                            />
+                        )}
+                        {property.location && (
+                            <Fact
+                                label="Property location"
+                                value={property.location}
+                            />
+                        )}
                     </dl>
                 </section>
             )}
@@ -510,21 +652,34 @@ export function ContextPanel({
             <section className="grid grid-cols-[minmax(0,1fr)] gap-3">
                 <h3 className="font-medium">People</h3>
                 <ul className="grid gap-2.5">
-                    <Person
-                        name={requester.name}
-                        detail={officeView ? 'Requester' : 'You'}
-                    />
-                    {OFFICE_PEOPLE.map((person) => (
-                        <Person
-                            key={person.name}
-                            name={person.name}
-                            detail={`${person.role} · Supply office`}
+                    {requester && (
+                        <PersonLine
+                            person={requester}
+                            detail={
+                                conversation.mine
+                                    ? 'You'
+                                    : (requester.division ?? 'Requester')
+                            }
                         />
-                    ))}
+                    )}
+                    {office
+                        .filter((person) => person.id !== requester?.id)
+                        .map((person) => (
+                            <PersonLine
+                                key={person.id}
+                                person={person}
+                                detail={
+                                    person.role
+                                        ? `${person.role} · Supply office`
+                                        : 'Supply office'
+                                }
+                            />
+                        ))}
                 </ul>
                 <p className="text-xs text-muted-foreground">
-                    Anyone in the supply office can reply, so nothing waits on
-                    one person.
+                    {officeView
+                        ? 'Everyone in the supply office sees this conversation and can reply.'
+                        : 'Anyone in the supply office can reply, so nothing waits on one person.'}
                 </p>
             </section>
         </div>
@@ -542,14 +697,18 @@ function Fact({ label, value }: { label: string; value: string }) {
     );
 }
 
-function Person({ name, detail }: { name: string; detail: string }) {
+function PersonLine({
+    person,
+    detail,
+}: {
+    person: MessagePerson;
+    detail: string;
+}) {
     return (
         <li className="flex items-center gap-2.5">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium">
-                {initialsOf(name)}
-            </span>
+            <PersonAvatar person={person} size="sm" className="size-8" />
             <span className="min-w-0">
-                <span className="block truncate text-sm">{name}</span>
+                <span className="block truncate text-sm">{person.name}</span>
                 <span className="block truncate text-xs text-muted-foreground">
                     {detail}
                 </span>

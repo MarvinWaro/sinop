@@ -2,17 +2,24 @@ import { Head, Link } from '@inertiajs/react';
 import {
     ChevronLeft,
     ChevronRight,
+    FileDown,
     ImageOff,
+    MapPin,
     Maximize2,
     Package,
     Pencil,
-    Printer,
+    Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { PageContainer, PageHeader } from '@/components/page-header';
+import {
+    PropertySticker,
+    PropertyStickerCard,
+    scanLink,
+} from '@/components/properties/property-sticker';
 import { ConditionBadge } from '@/components/status-badges';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -31,11 +38,11 @@ import {
 import { useCan } from '@/hooks/use-can';
 import {
     formatLongDate,
+    formatNumber,
     formatPeso,
     initialsOf,
     parseDate,
     shortMonthNames,
-    truncate,
 } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
@@ -57,20 +64,24 @@ type OtherProperty = {
 
 type Props = {
     property: Property;
-    qrCodeImage: string;
     holder: { assignedCount: number; lastAssignment: string | null };
     otherProperties: OtherProperty[];
 };
 
 export default function PropertyShow({
     property,
-    qrCodeImage,
     holder,
     otherProperties,
 }: Props) {
     const can = useCan();
     const [qrOpen, setQrOpen] = useState(false);
     const user = property.user ?? null;
+    const quantity = [
+        formatNumber(property.quantity_per_physical_count),
+        property.unit_of_measure,
+    ]
+        .filter(Boolean)
+        .join(' ');
 
     return (
         <>
@@ -78,7 +89,22 @@ export default function PropertyShow({
             <PageContainer>
                 <PageHeader
                     title={property.item_name}
-                    description={`Property no. ${property.property_number}`}
+                    description={
+                        <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <span className="rounded-md border bg-muted/50 px-2 py-0.5 font-mono text-xs text-foreground">
+                                {property.property_number}
+                            </span>
+                            <ConditionBadge condition={property.condition} />
+                            {property.fund && (
+                                <Meta icon={Wallet}>{property.fund}</Meta>
+                            )}
+                            {property.location && (
+                                <Meta icon={MapPin}>
+                                    {property.location.location_name}
+                                </Meta>
+                            )}
+                        </span>
+                    }
                     actions={
                         can('properties.update') && (
                             <Button asChild variant="outline">
@@ -91,221 +117,225 @@ export default function PropertyShow({
                     }
                 />
 
-                <div className="grid gap-6 lg:grid-cols-3">
-                    <Card className="lg:col-span-2">
-                        <CardContent>
-                            <ImageCarousel
-                                images={(property.images ?? []).map(
-                                    (image) => image.url,
-                                )}
-                                alt={property.item_name}
-                            />
-                        </CardContent>
-                    </Card>
-
+                <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
                     <div className="grid gap-6">
+                        <Gallery
+                            images={(property.images ?? []).map(
+                                (image) => image.url,
+                            )}
+                            alt={property.item_name}
+                            addHref={
+                                can('properties.update')
+                                    ? edit.url(property.id)
+                                    : undefined
+                            }
+                        />
+
                         <Card>
                             <CardHeader>
-                                <CardTitle>QR code</CardTitle>
-                                <CardDescription>
-                                    Scan to see the property details
+                                <CardTitle>Details</CardTitle>
+                            </CardHeader>
+                            <CardContent className="grid gap-6">
+                                <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+                                    <Field label="Property number" mono>
+                                        {property.property_number}
+                                    </Field>
+                                    <Field label="Serial number" mono>
+                                        {property.serial_no}
+                                    </Field>
+                                    <Field label="Model number" mono>
+                                        {property.model_no}
+                                    </Field>
+                                    <Field label="Acquired">
+                                        {formatLongDate(
+                                            property.acquisition_date,
+                                            '',
+                                        )}
+                                    </Field>
+                                    <Field label="Acquisition cost">
+                                        {property.acquisition_cost
+                                            ? formatPeso(
+                                                  property.acquisition_cost,
+                                              )
+                                            : null}
+                                    </Field>
+                                    <Field label="Fund">{property.fund}</Field>
+                                    <Field label="Location">
+                                        {property.location?.location_name}
+                                    </Field>
+                                    <Field label="Quantity (physical count)">
+                                        {quantity}
+                                    </Field>
+                                    <Field label="Condition">
+                                        <ConditionBadge
+                                            condition={property.condition}
+                                        />
+                                    </Field>
+                                </dl>
+                                <dl className="grid gap-5 border-t pt-6 sm:grid-cols-2">
+                                    <Field label="Description" prose>
+                                        {property.item_description}
+                                    </Field>
+                                    <Field label="Remarks" prose>
+                                        {property.remarks}
+                                    </Field>
+                                </dl>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="grid gap-6">
+                        <Card className="gap-4">
+                            <CardHeader>
+                                <CardDescription className="text-xs font-medium tracking-wide uppercase">
+                                    Accountable officer
                                 </CardDescription>
                             </CardHeader>
-                            <CardContent className="flex flex-col items-center gap-4">
-                                <img
-                                    src={qrCodeImage}
-                                    alt={`QR code for ${property.property_number}`}
-                                    className="size-40 rounded-md border bg-white p-2"
-                                />
-                                <div className="flex flex-wrap justify-center gap-2">
+                            <CardContent className="grid gap-4">
+                                {user ? (
+                                    <>
+                                        <div className="flex items-center gap-3">
+                                            <Avatar className="size-11">
+                                                {user.avatar && (
+                                                    <AvatarImage
+                                                        src={user.avatar}
+                                                        alt={user.name}
+                                                    />
+                                                )}
+                                                <AvatarFallback>
+                                                    {initialsOf(user.name)}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="min-w-0">
+                                                <p className="truncate font-semibold">
+                                                    {user.name}
+                                                </p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    {[
+                                                        user.designation?.name,
+                                                        user.department?.name,
+                                                    ]
+                                                        .filter(Boolean)
+                                                        .join(' · ') || '—'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border text-sm">
+                                            <div className="bg-card px-3 py-2.5">
+                                                <dt className="text-xs text-muted-foreground">
+                                                    Holds
+                                                </dt>
+                                                <dd className="font-medium tabular-nums">
+                                                    {holder.assignedCount}{' '}
+                                                    {holder.assignedCount === 1
+                                                        ? 'property'
+                                                        : 'properties'}
+                                                </dd>
+                                            </div>
+                                            <div className="min-w-0 bg-card px-3 py-2.5">
+                                                <dt className="text-xs text-muted-foreground">
+                                                    Latest
+                                                </dt>
+                                                <dd
+                                                    className="truncate font-medium"
+                                                    title={
+                                                        holder.lastAssignment ??
+                                                        undefined
+                                                    }
+                                                >
+                                                    {holder.lastAssignment ??
+                                                        '—'}
+                                                </dd>
+                                            </div>
+                                        </dl>
+                                    </>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground">
+                                        Not assigned to anyone yet.
+                                    </p>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <PropertyStickerCard
+                            itemName={property.item_name}
+                            propertyNumber={property.property_number}
+                            serialNo={property.serial_no}
+                            actions={
+                                <>
                                     <Button
+                                        type="button"
                                         variant="outline"
-                                        size="sm"
+                                        size="icon"
+                                        className="size-8"
                                         onClick={() => setQrOpen(true)}
+                                        aria-label="Enlarge sticker"
+                                        title="Enlarge"
                                     >
                                         <Maximize2 />
-                                        Enlarge QR
                                     </Button>
                                     {can('properties.qr') && (
-                                        <Button asChild size="sm">
+                                        <Button
+                                            asChild
+                                            variant="outline"
+                                            size="icon"
+                                            className="size-8"
+                                        >
                                             <a
                                                 href={downloadQr.url(
                                                     property.id,
                                                 )}
+                                                aria-label="Download the QR code as a PDF"
+                                                title="QR code PDF"
                                             >
-                                                <Printer />
-                                                Print sticker
+                                                <FileDown />
                                             </a>
                                         </Button>
                                     )}
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Accountable officer</CardTitle>
-                            </CardHeader>
-                            <CardContent className="grid gap-4">
-                                <div className="flex items-center gap-3">
-                                    <Avatar className="size-12">
-                                        {user?.avatar && (
-                                            <AvatarImage
-                                                src={user.avatar}
-                                                alt={user.name}
-                                            />
-                                        )}
-                                        <AvatarFallback>
-                                            {initialsOf(user?.name)}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <div className="min-w-0">
-                                        <p className="truncate font-medium">
-                                            {user?.name ?? 'No assigned user'}
-                                        </p>
-                                        {user && (
-                                            <p className="text-sm text-muted-foreground">
-                                                {[
-                                                    user.designation?.name,
-                                                    user.department?.name,
-                                                ]
-                                                    .filter(Boolean)
-                                                    .join(' · ') || '—'}
-                                            </p>
-                                        )}
-                                    </div>
-                                </div>
-                                {user && (
-                                    <dl className="grid gap-2 rounded-md border p-3 text-sm">
-                                        <div className="flex justify-between gap-3">
-                                            <dt className="text-muted-foreground">
-                                                Assigned properties
-                                            </dt>
-                                            <dd className="font-medium tabular-nums">
-                                                {holder.assignedCount}
-                                            </dd>
-                                        </div>
-                                        <div className="flex justify-between gap-3">
-                                            <dt className="text-muted-foreground">
-                                                Last assignment
-                                            </dt>
-                                            <dd className="truncate text-right font-medium">
-                                                {holder.lastAssignment ?? 'N/A'}
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                )}
-                            </CardContent>
-                        </Card>
+                                </>
+                            }
+                        />
                     </div>
-                </div>
-
-                <div className="grid gap-6 md:grid-cols-3">
-                    <DetailCard title="Basic information">
-                        <Detail label="Item name" value={property.item_name} />
-                        <Detail
-                            label="Property number"
-                            value={property.property_number}
-                        />
-                        <Detail
-                            label="Serial number"
-                            value={property.serial_no ?? 'N/A'}
-                        />
-                        <Detail
-                            label="Model number"
-                            value={property.model_no ?? 'N/A'}
-                        />
-                    </DetailCard>
-                    <DetailCard title="Financial details">
-                        <Detail
-                            label="Acquisition date"
-                            value={formatLongDate(
-                                property.acquisition_date,
-                                'N/A',
-                            )}
-                        />
-                        <Detail
-                            label="Acquisition cost"
-                            value={
-                                property.acquisition_cost
-                                    ? formatPeso(property.acquisition_cost)
-                                    : 'N/A'
-                            }
-                        />
-                        <Detail label="Fund" value={property.fund ?? 'N/A'} />
-                        <Detail
-                            label="Condition"
-                            value={
-                                <ConditionBadge
-                                    condition={property.condition}
-                                />
-                            }
-                        />
-                    </DetailCard>
-                    <DetailCard title="Location & details">
-                        <Detail
-                            label="Location"
-                            value={property.location?.location_name ?? 'N/A'}
-                        />
-                        <Detail
-                            label="Quantity (physical count)"
-                            value={property.quantity_per_physical_count}
-                        />
-                        <Detail
-                            label="Description"
-                            value={
-                                property.item_description ||
-                                'No description available.'
-                            }
-                        />
-                        <Detail
-                            label="Remarks"
-                            value={property.remarks || 'No remarks.'}
-                        />
-                    </DetailCard>
                 </div>
 
                 {user && otherProperties.length > 0 && (
                     <section className="grid gap-4">
-                        <h2 className="text-lg font-semibold">
-                            Other properties held by {user.name}
-                        </h2>
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="flex items-baseline justify-between gap-4">
+                            <h2 className="font-semibold">
+                                Also held by {user.name}
+                            </h2>
+                            <span className="text-sm text-muted-foreground tabular-nums">
+                                {otherProperties.length}
+                            </span>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                             {otherProperties.map((other) => (
                                 <Link
                                     key={other.id}
                                     href={view(other.id)}
-                                    className="group overflow-hidden rounded-xl border bg-card transition-colors hover:bg-muted/50"
+                                    className="group overflow-hidden rounded-xl border bg-card transition-colors outline-none hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                                 >
-                                    <div className="flex aspect-video items-center justify-center bg-muted">
+                                    <div className="flex aspect-[16/10] items-center justify-center overflow-hidden bg-muted">
                                         {other.image_url ? (
                                             <img
                                                 src={other.image_url}
                                                 alt=""
-                                                className="size-full object-cover"
+                                                loading="lazy"
+                                                className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                                             />
                                         ) : (
                                             <Package className="size-8 text-muted-foreground" />
                                         )}
                                     </div>
-                                    <div className="grid gap-1 p-4">
-                                        <Badge
-                                            variant="secondary"
-                                            className="w-fit font-mono"
-                                        >
-                                            {other.property_number}
-                                        </Badge>
-                                        <p className="font-medium">
+                                    <div className="grid gap-0.5 p-4">
+                                        <p className="truncate font-medium">
                                             {other.item_name}
                                         </p>
-                                        <p className="text-sm text-muted-foreground">
-                                            {truncate(
-                                                other.item_description ??
-                                                    'No description',
-                                                60,
-                                            )}
-                                        </p>
-                                        <p className="text-xs text-muted-foreground">
+                                        <p className="truncate text-xs text-muted-foreground">
+                                            <span className="font-mono">
+                                                {other.property_number}
+                                            </span>
+                                            {' · '}
                                             {monthYear(other.acquisition_date)}
                                         </p>
                                     </div>
@@ -317,17 +347,19 @@ export default function PropertyShow({
             </PageContainer>
 
             <Dialog open={qrOpen} onOpenChange={setQrOpen}>
-                <DialogContent className="sm:max-w-md">
+                <DialogContent className="sm:max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>{property.item_name}</DialogTitle>
                         <DialogDescription>
                             Property no. {property.property_number}
                         </DialogDescription>
                     </DialogHeader>
-                    <img
-                        src={qrCodeImage}
-                        alt={`QR code for ${property.property_number}`}
-                        className="mx-auto w-full max-w-80 rounded-md border bg-white p-3"
+                    <PropertySticker
+                        itemName={property.item_name}
+                        propertyNumber={property.property_number}
+                        serialNo={property.serial_no}
+                        scanUrl={scanLink(property.property_number)}
+                        className="rounded-md border"
                     />
                 </DialogContent>
             </Dialog>
@@ -343,67 +375,152 @@ function monthYear(value: string | null): string {
         : 'Unknown date';
 }
 
-function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
+function Meta({
+    icon: Icon,
+    children,
+}: {
+    icon: typeof MapPin;
+    children: ReactNode;
+}) {
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <Icon className="size-3.5" />
+            {children}
+        </span>
+    );
+}
+
+/** One labelled value; an empty one shows a dash. */
+function Field({
+    label,
+    mono = false,
+    prose = false,
+    children,
+}: {
+    label: string;
+    mono?: boolean;
+    /** Longer text (description, remarks): normal weight, keeps line breaks. */
+    prose?: boolean;
+    children: ReactNode;
+}) {
+    const empty =
+        children === null ||
+        children === undefined ||
+        (typeof children === 'string' && children.trim() === '');
+
+    return (
+        <div className="min-w-0">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd
+                className={cn(
+                    'mt-1 text-sm break-words',
+                    prose ? 'whitespace-pre-line' : 'font-medium',
+                    mono && !empty && 'font-mono',
+                    empty && 'font-normal text-muted-foreground',
+                )}
+            >
+                {empty ? '—' : children}
+            </dd>
+        </div>
+    );
+}
+
+/**
+ * The photos: the current one large (on a blurred copy of itself, so
+ * portrait and odd sizes don't leave grey bars), thumbnails below.
+ */
+function Gallery({
+    images,
+    alt,
+    addHref,
+}: {
+    images: string[];
+    alt: string;
+    /** Where to add photos when there are none (the edit page). */
+    addHref?: string;
+}) {
     const [index, setIndex] = useState(0);
 
     if (images.length === 0) {
         return (
-            <div className="flex aspect-video flex-col items-center justify-center gap-2 rounded-lg bg-muted text-sm text-muted-foreground">
-                <ImageOff className="size-8" />
-                No photos uploaded
-            </div>
+            <Card className="py-0">
+                <div className="flex h-72 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                    <div className="rounded-full border bg-muted/50 p-3">
+                        <ImageOff className="size-6" />
+                    </div>
+                    No photos yet
+                    {addHref && (
+                        <Button asChild variant="outline" size="sm">
+                            <Link href={addHref}>Add photos</Link>
+                        </Button>
+                    )}
+                </div>
+            </Card>
         );
     }
 
     const current = Math.min(index, images.length - 1);
+    const many = images.length > 1;
     const go = (step: number) =>
         setIndex((current + step + images.length) % images.length);
 
     return (
-        <div className="grid gap-3">
-            <div className="relative overflow-hidden rounded-lg bg-muted">
+        <Card className="gap-0 overflow-hidden py-0">
+            <div
+                className="group relative aspect-[16/10] overflow-hidden bg-muted"
+                onKeyDown={(event) => {
+                    if (event.key === 'ArrowLeft') {
+                        go(-1);
+                    } else if (event.key === 'ArrowRight') {
+                        go(1);
+                    }
+                }}
+            >
                 <img
                     src={images[current]}
-                    alt={`${alt} – photo ${current + 1}`}
-                    className="aspect-video w-full object-contain"
+                    alt=""
+                    aria-hidden
+                    className="absolute inset-0 size-full scale-110 object-cover opacity-40 blur-2xl"
                 />
-                {images.length > 1 && (
+                <img
+                    src={images[current]}
+                    alt={`${alt}, photo ${current + 1} of ${images.length}`}
+                    className="relative size-full object-contain"
+                />
+                {many && (
                     <>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="icon"
-                            className="absolute top-1/2 left-2 -translate-y-1/2 rounded-full"
+                        <GalleryButton
+                            side="left"
+                            label="Previous photo"
                             onClick={() => go(-1)}
-                            aria-label="Previous photo"
                         >
                             <ChevronLeft />
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="secondary"
-                            size="icon"
-                            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full"
+                        </GalleryButton>
+                        <GalleryButton
+                            side="right"
+                            label="Next photo"
                             onClick={() => go(1)}
-                            aria-label="Next photo"
                         >
                             <ChevronRight />
-                        </Button>
+                        </GalleryButton>
+                        <span className="absolute right-3 bottom-3 rounded-full bg-background/80 px-2.5 py-1 text-xs font-medium tabular-nums shadow-sm backdrop-blur">
+                            {current + 1} / {images.length}
+                        </span>
                     </>
                 )}
             </div>
-            {images.length > 1 && (
-                <div className="grid grid-cols-4 gap-2">
+            {many && (
+                <div className="flex gap-2 overflow-x-auto border-t p-3">
                     {images.map((src, i) => (
                         <button
                             key={src}
                             type="button"
                             onClick={() => setIndex(i)}
                             className={cn(
-                                'overflow-hidden rounded-md border-2',
+                                'size-16 shrink-0 overflow-hidden rounded-md ring-offset-2 ring-offset-card transition-opacity outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                 i === current
-                                    ? 'border-primary'
-                                    : 'border-transparent opacity-70 hover:opacity-100',
+                                    ? 'ring-2 ring-primary'
+                                    : 'opacity-60 hover:opacity-100',
                             )}
                             aria-label={`Show photo ${i + 1}`}
                             aria-current={i === current}
@@ -411,41 +528,41 @@ function ImageCarousel({ images, alt }: { images: string[]; alt: string }) {
                             <img
                                 src={src}
                                 alt=""
-                                className="aspect-square w-full object-cover"
+                                className="size-full object-cover"
                             />
                         </button>
                     ))}
                 </div>
             )}
-        </div>
-    );
-}
-
-function DetailCard({
-    title,
-    children,
-}: {
-    title: string;
-    children: React.ReactNode;
-}) {
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle>{title}</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <dl className="grid gap-3">{children}</dl>
-            </CardContent>
         </Card>
     );
 }
 
-function Detail({ label, value }: { label: string; value: React.ReactNode }) {
+function GalleryButton({
+    side,
+    label,
+    onClick,
+    children,
+}: {
+    side: 'left' | 'right';
+    label: string;
+    onClick: () => void;
+    children: ReactNode;
+}) {
     return (
-        <div>
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="text-sm font-medium break-words">{value}</dd>
-        </div>
+        <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            onClick={onClick}
+            aria-label={label}
+            className={cn(
+                'absolute top-1/2 size-9 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur transition-opacity hover:bg-background focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100',
+                side === 'left' ? 'left-3' : 'right-3',
+            )}
+        >
+            {children}
+        </Button>
     );
 }
 

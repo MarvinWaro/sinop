@@ -2,10 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Category;
 use App\Models\Supply;
 use App\Models\SupplyStock;
-use App\Models\Category;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class SupplyController extends Controller
@@ -48,28 +49,29 @@ class SupplyController extends Controller
             ]);
 
             $validated = $request->validate([
-                'stock_no'            => 'required|string|unique:supplies,stock_no',
-                'item_name'           => 'required|string|max:255',
-                'description'         => 'nullable|string',
+                'stock_no' => 'required|string|unique:supplies,stock_no',
+                'item_name' => 'required|string|max:255',
+                'description' => 'nullable|string',
                 'unit_of_measurement' => 'required|string|max:50',
-                'category_id'         => 'nullable|exists:categories,id',
-                'reorder_point'       => 'required|integer|min:0',
-                'acquisition_cost'    => 'nullable|numeric',
+                'category_id' => 'nullable|exists:categories,id',
+                'reorder_point' => 'nullable|integer|min:0',
+                'acquisition_cost' => 'nullable|numeric',
             ]);
+            $validated['reorder_point'] ??= 0; // optional: blank means 0
 
             $supply = Supply::create(array_merge($validated, ['is_active' => true]));
 
             // Auto-create a default supply_stock record so the supply appears in the stocks listing
             SupplyStock::create([
-                'supply_id'        => $supply->supply_id,
+                'supply_id' => $supply->supply_id,
                 'quantity_on_hand' => 0,
-                'unit_cost'        => 0,
-                'total_cost'       => 0,
-                'status'           => 'depleted',
+                'unit_cost' => 0,
+                'total_cost' => 0,
+                'status' => 'depleted',
             ]);
 
             return redirect()->route('supplies.index')->with('success', 'Supply created successfully.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return redirect()->route('supplies.index')
                 ->withErrors($e->validator)
                 ->withInput()
@@ -85,19 +87,20 @@ class SupplyController extends Controller
             ]);
 
             $validated = $request->validate([
-                'stock_no'            => 'required|string|unique:supplies,stock_no,'.$supply->supply_id.',supply_id',
-                'item_name'           => 'required|string|max:255',
-                'description'         => 'nullable|string',
+                'stock_no' => 'required|string|unique:supplies,stock_no,'.$supply->supply_id.',supply_id',
+                'item_name' => 'required|string|max:255',
+                'description' => 'nullable|string',
                 'unit_of_measurement' => 'required|string|max:50',
-                'category_id'         => 'nullable|exists:categories,id',
-                'reorder_point'       => 'required|integer|min:0',
-                'acquisition_cost'    => 'nullable|numeric',
+                'category_id' => 'nullable|exists:categories,id',
+                'reorder_point' => 'nullable|integer|min:0',
+                'acquisition_cost' => 'nullable|numeric',
             ]);
+            $validated['reorder_point'] ??= 0; // optional: blank means 0
 
             $supply->update($validated);
 
             return redirect()->route('supplies.index')->with('success', 'Supply updated successfully.');
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        } catch (ValidationException $e) {
             return redirect()->route('supplies.index')
                 ->withErrors($e->validator)
                 ->withInput()
@@ -109,9 +112,10 @@ class SupplyController extends Controller
     {
         try {
             $supply->delete();
+
             return redirect()->route('supplies.index')->with('deleted', 'Supply deleted successfully.');
         } catch (\Exception $e) {
-            return redirect()->route('supplies.index')->with('error', 'Error deleting supply: ' . $e->getMessage());
+            return redirect()->route('supplies.index')->with('error', 'Error deleting supply: '.$e->getMessage());
         }
     }
 }

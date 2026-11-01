@@ -46,16 +46,16 @@ final class RisDocument
                 'remarks' => $item->remarks,
             ])->values(),
             'signatories' => [
-                'requested' => self::signatory($risSlip->requester, $risSlip->created_at, $risSlip->requester_signature_type, $signatures->get('requested')),
-                'approved' => $risSlip->approved_by ? self::signatory($risSlip->approver, $risSlip->approved_at, $risSlip->approver_signature_type, $signatures->get('approved')) : null,
-                'issued' => $risSlip->issued_by ? self::signatory($risSlip->issuer, $risSlip->issued_at, $risSlip->issuer_signature_type, $signatures->get('issued')) : null,
-                'received' => $risSlip->received_by ? self::signatory($risSlip->receiver, $risSlip->received_at, $risSlip->receiver_signature_type, $signatures->get('received'), signed: $risSlip->received_at !== null) : null,
+                'requested' => self::signatory($risSlip, 'requested', $risSlip->requester, $risSlip->created_at, $risSlip->requester_signature_type, $signatures->get('requested')),
+                'approved' => $risSlip->approved_by ? self::signatory($risSlip, 'approved', $risSlip->approver, $risSlip->approved_at, $risSlip->approver_signature_type, $signatures->get('approved')) : null,
+                'issued' => $risSlip->issued_by ? self::signatory($risSlip, 'issued', $risSlip->issuer, $risSlip->issued_at, $risSlip->issuer_signature_type, $signatures->get('issued')) : null,
+                'received' => $risSlip->received_by ? self::signatory($risSlip, 'received', $risSlip->receiver, $risSlip->received_at, $risSlip->receiver_signature_type, $signatures->get('received'), signed: $risSlip->received_at !== null) : null,
             ],
         ];
     }
 
     /** @return array<string, mixed>|null */
-    private static function signatory(?User $user, ?CarbonInterface $date, ?string $type, ?RisSlipSignature $signature, bool $signed = true): ?array
+    private static function signatory(RisSlip $risSlip, string $step, ?User $user, ?CarbonInterface $date, ?string $type, ?RisSlipSignature $signature, bool $signed = true): ?array
     {
         if ($user === null) {
             return null;
@@ -66,17 +66,18 @@ final class RisDocument
             'designation' => $user->designation?->name,
             'date' => $signed ? $date?->toIso8601String() : null,
             'type' => $signed ? $type : null,
-            'signature' => $signed && $type === 'esign' ? self::signature($user, $signature) : null,
+            'signature' => $signed && $type === 'esign' ? self::signature($risSlip, $step, $user, $signature) : null,
         ];
     }
 
     /**
      * The frozen signature, or for slips signed before signatures were
-     * frozen, the person's current one (placement null: drawn centred).
+     * frozen, the person's current one (placement null: drawn centred),
+     * loaded through the RIS so only people who may open it see it.
      *
      * @return array<string, mixed>|null
      */
-    private static function signature(User $user, ?RisSlipSignature $signature): ?array
+    private static function signature(RisSlip $risSlip, string $step, User $user, ?RisSlipSignature $signature): ?array
     {
         if ($signature !== null) {
             return [
@@ -85,6 +86,8 @@ final class RisDocument
             ];
         }
 
-        return $user->signature_url !== null ? ['url' => $user->signature_url, 'placement' => null] : null;
+        return $user->signature_path !== null
+            ? ['url' => route('ris.signature', ['risSlip' => $risSlip, 'step' => $step], false), 'placement' => null]
+            : null;
     }
 }

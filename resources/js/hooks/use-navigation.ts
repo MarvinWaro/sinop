@@ -3,6 +3,7 @@ import {
     BarChart3,
     BookOpen,
     Boxes,
+    ClipboardCheck,
     Building2,
     ClipboardList,
     FileSignature,
@@ -35,6 +36,7 @@ import { index as categoriesIndex } from '@/routes/categories';
 import { index as departmentsIndex } from '@/routes/departments';
 import { index as designationsIndex } from '@/routes/designations';
 import { index as locationsIndex } from '@/routes/location';
+import { index as propertyConditionsIndex } from '@/routes/property-conditions';
 import { index as messagesIndex } from '@/routes/messages';
 import { edit as editProfile } from '@/routes/profile';
 import { index as propertiesIndex } from '@/routes/property';
@@ -121,10 +123,16 @@ export const adminSettingsNav: NavGroup[] = [
                 permission: 'suppliers.view',
             },
             {
-                title: 'Locations',
+                title: 'Property locations',
                 href: locationsIndex(),
                 icon: MapPin,
                 permission: 'locations.view',
+            },
+            {
+                title: 'Property conditions',
+                href: propertyConditionsIndex(),
+                icon: ClipboardCheck,
+                permission: 'property-conditions.view',
             },
             {
                 title: 'RIS signatory',
@@ -174,18 +182,19 @@ export function settingsNavFor(
  * side (and admin-side users in "user mode") only see their home dashboard.
  */
 export function useNavigation(): NavGroup[] {
-    const { auth, notifications } = usePage().props;
+    const { auth, notifications, messagesUnread } = usePage().props;
     const can = useCan();
 
     if (!auth.user) {
         return [];
     }
 
-    // Requests and concerns with the supply office (a preview for now).
+    // Requests and concerns with the supply office; the badge is unread messages.
     const messagesItem: NavItem = {
         title: 'Messages',
         href: messagesIndex(),
         icon: MessagesSquare,
+        badge: messagesUnread ?? 0,
     };
 
     if (!can('dashboard.view') || auth.isAdminUserMode) {

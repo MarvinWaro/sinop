@@ -755,39 +755,158 @@ export function DonutChart({
                     {centerText}
                 </text>
             </svg>
-            <div className="grid w-full min-w-0 gap-1.5 text-sm">
-                {data.map((slice, index) => (
-                    <div
-                        key={slice.label}
-                        className="flex items-center justify-between gap-3"
-                        onMouseEnter={() => setActive(index)}
-                        onMouseLeave={() => setActive(null)}
-                    >
-                        <span className="flex min-w-0 items-center gap-2">
-                            <span
-                                className="size-2.5 shrink-0 rounded-sm"
-                                style={{
-                                    background:
-                                        slice.color ??
-                                        chartColors[index % chartColors.length],
-                                }}
-                            />
-                            <span className="truncate text-muted-foreground">
-                                {slice.label}
+            <DonutLegend
+                data={data}
+                formatValue={formatValue}
+                onActive={setActive}
+            />
+        </div>
+    );
+}
+
+/**
+ * A donut's legend: colour, label, value and share. Also used beside other
+ * pictures of the same numbers (the stock overview's box), so they read the
+ * same. `onActive` gets the row the pointer is on (null when it leaves).
+ */
+export function DonutLegend({
+    data,
+    formatValue = defaultFormat,
+    onActive,
+}: {
+    data: DonutSlice[];
+    formatValue?: (value: number) => string;
+    onActive?: (index: number | null) => void;
+}) {
+    const total = data.reduce((sum, slice) => sum + slice.value, 0);
+
+    return (
+        <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 text-sm">
+            {data.map((slice, index) => (
+                <div
+                    key={slice.label}
+                    className="flex items-center justify-between gap-3"
+                    onMouseEnter={() => onActive?.(index)}
+                    onMouseLeave={() => onActive?.(null)}
+                >
+                    <span className="flex min-w-0 items-center gap-2">
+                        <span
+                            className="size-2.5 shrink-0 rounded-sm"
+                            style={{
+                                background:
+                                    slice.color ??
+                                    chartColors[index % chartColors.length],
+                            }}
+                        />
+                        <span
+                            className="truncate text-muted-foreground"
+                            title={slice.label}
+                        >
+                            {slice.label}
+                        </span>
+                    </span>
+                    <span className="font-medium tabular-nums">
+                        {formatValue(slice.value)}
+                        {total > 0 && (
+                            <span className="ml-1 text-xs text-muted-foreground">
+                                ({((slice.value / total) * 100).toFixed(1)}%)
                             </span>
+                        )}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+export type ShareSegment = { label: string; value: number; color: string };
+
+/** "42%", or "<1%" for a share too small to round up. */
+function shareText(value: number, total: number): string {
+    const share = total > 0 ? (value / total) * 100 : 0;
+
+    return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
+}
+
+/**
+ * Part-to-whole as one segmented bar with its legend below (label, count,
+ * share). For small cards, where a donut would be mostly empty ring.
+ * Pointing at a segment or a legend row brings that one forward.
+ */
+export function ShareBar({
+    data,
+    formatValue = defaultFormat,
+    className,
+}: {
+    data: ShareSegment[];
+    formatValue?: (value: number) => string;
+    className?: string;
+}) {
+    const [active, setActive] = useState<string | null>(null);
+    const total = data.reduce((sum, segment) => sum + segment.value, 0);
+    const dimmed = (label: string) => active !== null && active !== label;
+
+    return (
+        <div className={cn('grid gap-4', className)}>
+            <div
+                role="img"
+                aria-label={data
+                    .map(
+                        (segment) =>
+                            `${segment.label}: ${formatValue(segment.value)}`,
+                    )
+                    .join(', ')}
+                className="flex h-2.5 gap-0.5"
+            >
+                {data
+                    .filter((segment) => segment.value > 0)
+                    .map((segment) => (
+                        <div
+                            key={segment.label}
+                            title={`${segment.label}: ${formatValue(segment.value)} (${shareText(segment.value, total)})`}
+                            onMouseEnter={() => setActive(segment.label)}
+                            onMouseLeave={() => setActive(null)}
+                            className={cn(
+                                'min-w-1 basis-0 rounded-[2px] transition-opacity first:rounded-l-full last:rounded-r-full',
+                                dimmed(segment.label) && 'opacity-30',
+                            )}
+                            style={{
+                                flexGrow: segment.value,
+                                background: segment.color,
+                            }}
+                        />
+                    ))}
+            </div>
+            <ul className="grid gap-2 text-sm">
+                {data.map((segment) => (
+                    <li
+                        key={segment.label}
+                        onMouseEnter={() => setActive(segment.label)}
+                        onMouseLeave={() => setActive(null)}
+                        className={cn(
+                            'flex items-center gap-2 transition-opacity',
+                            dimmed(segment.label) && 'opacity-50',
+                        )}
+                    >
+                        <span
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ background: segment.color }}
+                        />
+                        <span
+                            className="min-w-0 flex-1 truncate text-muted-foreground"
+                            title={segment.label}
+                        >
+                            {segment.label}
                         </span>
                         <span className="font-medium tabular-nums">
-                            {formatValue(slice.value)}
-                            {total > 0 && (
-                                <span className="ml-1 text-xs text-muted-foreground">
-                                    ({((slice.value / total) * 100).toFixed(1)}
-                                    %)
-                                </span>
-                            )}
+                            {formatValue(segment.value)}
                         </span>
-                    </div>
+                        <span className="w-10 text-right text-xs text-muted-foreground tabular-nums">
+                            {shareText(segment.value, total)}
+                        </span>
+                    </li>
                 ))}
-            </div>
+            </ul>
         </div>
     );
 }
@@ -796,10 +915,13 @@ export function DonutChart({
 export function BarList({
     data,
     formatValue = defaultFormat,
+    color,
     className,
 }: {
     data: { label: string; value: number; hint?: string }[];
     formatValue?: (value: number) => string;
+    /** One colour for every bar (a single measure); default: a colour per row. */
+    color?: string;
     className?: string;
 }) {
     const max = Math.max(0, ...data.map((d) => d.value));
@@ -827,6 +949,7 @@ export function BarList({
                             style={{
                                 width: `${max > 0 ? (item.value / max) * 100 : 0}%`,
                                 background:
+                                    color ??
                                     chartColors[index % chartColors.length],
                             }}
                         />

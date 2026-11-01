@@ -114,6 +114,7 @@ export default function RsmiReport(props: Props) {
                             month={props.month}
                             fundClusters={props.fundClusters}
                             fundCluster={fundCluster}
+                            autoApply
                         />
                     </CardContent>
                 </Card>

@@ -1,4 +1,5 @@
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
+import { BookOpen } from 'lucide-react';
 import { CardFilters } from '@/components/cards/card-filters';
 import {
     SupplyCardBanner,
@@ -10,6 +11,7 @@ import {
     balanceStatus,
 } from '@/components/cards/supply-card-stats';
 import {
+    cardTableBody,
     cardTableHead,
     columnTones as tone,
 } from '@/components/cards/column-tones';
@@ -34,6 +36,7 @@ import {
     index as stockCardsIndex,
     show as showStockCard,
 } from '@/routes/stock-cards';
+import { show as showLedgerCard } from '@/routes/supply-ledger-cards';
 import type { Supply } from '@/types';
 
 type Entry = {
@@ -108,39 +111,60 @@ export default function StockCardShow(props: Props) {
                         />
                     }
                     actions={
-                        can('stock-cards.export') && (
-                            <>
+                        <>
+                            {can('ledger-cards.view') && (
                                 <Button
                                     asChild
                                     size="sm"
-                                    className={onBanner.solid}
+                                    className={onBanner.button}
                                 >
-                                    <a
-                                        href={exportPdf.url(supply.supply_id, {
+                                    <Link
+                                        href={showLedgerCard(supply.supply_id, {
                                             query,
                                         })}
                                     >
-                                        Export PDF
-                                    </a>
+                                        <BookOpen />
+                                        Ledger card
+                                    </Link>
                                 </Button>
-                                <Button
-                                    asChild
-                                    size="sm"
-                                    className={onBanner.solid}
-                                >
-                                    <a
-                                        href={exportExcel.url(
-                                            supply.supply_id,
-                                            {
-                                                query,
-                                            },
-                                        )}
+                            )}
+                            {can('stock-cards.export') && (
+                                <>
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        className={onBanner.solid}
                                     >
-                                        Export Excel
-                                    </a>
-                                </Button>
-                            </>
-                        )
+                                        <a
+                                            href={exportPdf.url(
+                                                supply.supply_id,
+                                                {
+                                                    query,
+                                                },
+                                            )}
+                                        >
+                                            Export PDF
+                                        </a>
+                                    </Button>
+                                    <Button
+                                        asChild
+                                        size="sm"
+                                        className={onBanner.solid}
+                                    >
+                                        <a
+                                            href={exportExcel.url(
+                                                supply.supply_id,
+                                                {
+                                                    query,
+                                                },
+                                            )}
+                                        >
+                                            Export Excel
+                                        </a>
+                                    </Button>
+                                </>
+                            )}
+                        </>
                     }
                 />
 
@@ -247,7 +271,7 @@ export default function StockCardShow(props: Props) {
                                     </TableHead>
                                 </TableRow>
                             </TableHeader>
-                            <TableBody>
+                            <TableBody className={cardTableBody}>
                                 {entries.length === 0 ? (
                                     <TableRow>
                                         <TableCell

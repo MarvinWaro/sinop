@@ -648,7 +648,7 @@ class RisSlipController extends Controller
                 'reason' => $validated['decline_reason'],
             ]);
 
-            return back()->with('success', "RIS #{$risSlip->ris_no} has been declined successfully. The requester has been notified with your reason.");
+            return back()->with('success', "{$risSlip->ris_no} has been declined successfully. The requester has been notified with your reason.");
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -699,21 +699,21 @@ class RisSlipController extends Controller
                 $issueQty = $itemData['quantity_issued'];
 
                 // BUSINESS RULE VALIDATION:
-                // 1. If stock is available, minimum issue quantity is 1
-                // 2. Maximum issue quantity is min(requested, available)
-                // 3. Zero is only allowed when no stock is available
+                // 1. Maximum issue quantity is min(requested, available)
+                // 2. Less than that, down to 0, is allowed (e.g. stock held in
+                //    reserve), but the remarks must say why
+                // 3. Nothing can be issued when no stock is available
 
                 if ($totalAvailable > 0) {
-                    // Stock is available - minimum must be 1
-                    if ($issueQty < 1) {
-                        $validationErrors[] = "Item '{$risItem->supply->item_name}' has {$totalAvailable} units available. Minimum issue quantity is 1. Cannot issue 0 for approved items with available stock.";
+                    $maxAllowedQty = min($totalAvailable, $requestedQty);
+                    if ($issueQty > $maxAllowedQty) {
+                        $validationErrors[] = "Item '{$risItem->supply->item_name}' - Maximum issue quantity is {$maxAllowedQty} (Available: {$totalAvailable}, Requested: {$requestedQty}).";
 
                         continue;
                     }
 
-                    $maxAllowedQty = min($totalAvailable, $requestedQty);
-                    if ($issueQty > $maxAllowedQty) {
-                        $validationErrors[] = "Item '{$risItem->supply->item_name}' - Maximum issue quantity is {$maxAllowedQty} (Available: {$totalAvailable}, Requested: {$requestedQty}).";
+                    if ($issueQty < $maxAllowedQty && blank($itemData['remarks'] ?? null)) {
+                        $validationErrors[] = "Item '{$risItem->supply->item_name}' - {$maxAllowedQty} can be issued but {$issueQty} is entered. Say why in its remarks.";
 
                         continue;
                     }

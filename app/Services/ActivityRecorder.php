@@ -205,7 +205,7 @@ class ActivityRecorder
             $model instanceof Supply => "{$model->item_name} ({$model->stock_no})",
             $model instanceof SupplyStock => trim(($model->supply?->item_name ?? 'Stock').' · Fund '.($model->fund_cluster ?? '—')),
             $model instanceof SupplyTransaction => (string) $model->reference_no,
-            $model instanceof RisSlip => "RIS {$model->ris_no}",
+            $model instanceof RisSlip => Str::start((string) $model->ris_no, 'RIS '),
             $model instanceof Property => trim("{$model->property_number} · {$model->item_name}"),
             $model instanceof Location => (string) $model->location_name,
             default => (string) ($model->getAttribute('name') ?? class_basename($model).' #'.$model->getKey()),

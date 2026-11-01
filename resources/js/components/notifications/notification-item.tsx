@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import {
@@ -214,7 +214,11 @@ export function NotificationItem({
 }
 
 /** The actor's photo or initials with a small icon for the kind. */
-function NotificationMark({ notification }: { notification: AppNotification }) {
+export function NotificationMark({
+    notification,
+}: {
+    notification: AppNotification;
+}) {
     const Icon = kindIcons[notification.kind.code] ?? Bell;
     const tone = tones[notification.kind.tone] ?? tones.info;
 

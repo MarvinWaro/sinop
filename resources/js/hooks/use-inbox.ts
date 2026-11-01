@@ -1,11 +1,17 @@
 import { router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useRef } from 'react';
-import { toast } from 'sonner';
+import { showNotificationToast } from '@/components/notifications/notification-toast';
+import { toast } from '@/lib/toast';
 import { getJson } from '@/lib/http';
 import { listen, onLiveStatus } from '@/lib/realtime';
 import type { LiveStatus } from '@/lib/realtime';
-import { index, open, recent } from '@/routes/notifications';
-import type { BroadcastingConfig, NotificationPage } from '@/types';
+import { index, recent } from '@/routes/notifications';
+import type {
+    BroadcastingConfig,
+    MessagesSignal,
+    NotificationPage,
+    TypingSignal,
+} from '@/types';
 import type { AppNotification } from '@/types/notifications';
 
 /** Check every minute when live updates are off or down… */
@@ -14,6 +20,20 @@ const POLL_MS = 60_000;
 const POLL_LIVE_MS = 300_000;
 /** A burst of signals reloads once. */
 const SETTLE_MS = 400;
+/** Up to this many new notifications pop up one card each. */
+const MAX_CARDS = 3;
+
+/**
+ * Window events for the Messages page: `MESSAGES_EVENT` when a conversation
+ * has news (detail: `{ conversation }`, or nothing when anything may have
+ * changed), `TYPING_EVENT` when someone types (detail: `{ conversation, name }`).
+ */
+export const MESSAGES_EVENT = 'sinop:messages';
+export const TYPING_EVENT = 'sinop:typing';
+
+function announce(name: string, detail?: unknown): void {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+}
 
 // The bell's panel is open: arrivals show there instead of as a toast.
 let panelOpen = false;
@@ -62,19 +82,21 @@ export function useLiveProps(props: string[]): void {
 }
 
 /**
- * Reload the bell's count, the sidebar badges and the page's own live props
- * in one request, without interrupting anything the person is doing.
+ * Reload the bell's count, the sidebar badges, the Messages badge and the
+ * page's own live props in one request, without interrupting anything the
+ * person is doing.
  */
 function refreshInbox(): void {
     router.reload({
-        only: ['inbox', 'notifications', ...liveProps.keys()],
+        only: ['inbox', 'notifications', 'messagesUnread', ...liveProps.keys()],
         async: true,
     });
 }
 
 /**
- * Keeps the bell and the sidebar badges current: on each live `inbox`
- * signal (Berth's Soketi app), and by checking now and then. A hidden tab
+ * Keeps the bell, the sidebar badges and Messages current: on each live
+ * `inbox`, `messages` or `typing` signal (Berth's Soketi app), and by
+ * checking now and then. A hidden tab
  * doesn't check; it catches up once when it's shown again. Mounted once,
  * in the app layout.
  */
@@ -88,11 +110,17 @@ export function useInboxUpdates(): void {
         let lastCheck = Date.now();
         let settle = 0;
 
-        const check = () => {
+        // `everything`: a check that may have missed messages too (polls,
+        // coming back to the tab), so the Messages page looks again.
+        const check = (everything = false) => {
             if (document.visibilityState === 'hidden') {
                 stale = true;
 
                 return;
+            }
+
+            if (everything || stale) {
+                announce(MESSAGES_EVENT);
             }
 
             stale = false;
@@ -105,11 +133,22 @@ export function useInboxUpdates(): void {
             settle = window.setTimeout(check, SETTLE_MS);
         };
 
+        const onMessages = (data?: unknown) => {
+            announce(MESSAGES_EVENT, data as MessagesSignal);
+            signal();
+        };
+
+        const onTyping = (data?: unknown) => {
+            if (data) {
+                announce(TYPING_EVENT, data as TypingSignal);
+            }
+        };
+
         const poll = window.setInterval(() => {
             const every = live === 'connected' ? POLL_LIVE_MS : POLL_MS;
 
             if (Date.now() - lastCheck >= every) {
-                check();
+                check(true);
             }
         }, POLL_MS);
 
@@ -121,9 +160,13 @@ export function useInboxUpdates(): void {
 
         document.addEventListener('visibilitychange', onVisible);
 
-        const stopListening = config
-            ? listen(config, config.channel, 'inbox', signal)
-            : () => {};
+        const stops = config
+            ? [
+                  listen(config, config.channel, 'inbox', signal),
+                  listen(config, config.channel, 'messages', onMessages),
+                  listen(config, config.channel, 'typing', onTyping),
+              ]
+            : [];
         const stopStatus = config
             ? onLiveStatus(config, (status) => {
                   live = status;
@@ -142,7 +185,7 @@ export function useInboxUpdates(): void {
             window.clearTimeout(settle);
             window.clearInterval(poll);
             document.removeEventListener('visibilitychange', onVisible);
-            stopListening();
+            stops.forEach((stop) => stop());
             stopStatus();
         };
     }, [config]);
@@ -172,9 +215,10 @@ function useLiveConfig(
 }
 
 /**
- * When a new notification arrives, show it as a toast with an Open button
- * (and a desktop pop-up while the tab is hidden). Quiet while the bell's
- * panel or the Notifications page shows it already.
+ * When new notifications arrive, pop each up as a card with the person's
+ * avatar (a few at most; more become one "N new notifications" toast), and
+ * a desktop pop-up while the tab is hidden. Quiet while the bell's panel or
+ * the Notifications page shows them already.
  */
 function useArrivalToasts(): void {
     const { inbox } = usePage().props;
@@ -185,10 +229,10 @@ function useArrivalToasts(): void {
         const previous = seen.current;
         seen.current = latestAt;
 
+        // No `previous` means there were none before: all unread ones are new.
         if (
             latestAt === null ||
-            previous === null ||
-            latestAt <= previous ||
+            (previous !== null && latestAt <= previous) ||
             panelOpen ||
             window.location.pathname.startsWith(index.url())
         ) {
@@ -199,7 +243,8 @@ function useArrivalToasts(): void {
             .then((page) => {
                 const arrived = page.data.filter(
                     (item) =>
-                        item.read_at === null && item.created_at > previous,
+                        item.read_at === null &&
+                        (previous === null || item.created_at > previous),
                 );
 
                 if (arrived.length === 0) {
@@ -212,20 +257,18 @@ function useArrivalToasts(): void {
                         ? notificationText(newest)
                         : `${arrived.length} new notifications`;
 
-                toast.info(title, {
-                    description:
-                        arrived.length === 1 ? newest.kind.label : undefined,
-                    duration: 8000,
-                    action: {
-                        label: 'Open',
-                        onClick: () =>
-                            router.visit(
-                                arrived.length === 1
-                                    ? open.url(newest.id)
-                                    : index.url(),
-                            ),
-                    },
-                });
+                if (arrived.length <= MAX_CARDS) {
+                    // Oldest first, so the newest ends up in front.
+                    [...arrived].reverse().forEach(showNotificationToast);
+                } else {
+                    toast.info(title, {
+                        duration: 8000,
+                        action: {
+                            label: 'Open',
+                            onClick: () => router.visit(index.url()),
+                        },
+                    });
+                }
 
                 if (
                     document.hidden &&

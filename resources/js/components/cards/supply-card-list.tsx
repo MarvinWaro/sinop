@@ -1,12 +1,12 @@
 import { Link } from '@inertiajs/react';
 import type { InertiaLinkProps } from '@inertiajs/react';
 import { Eye, ScrollText } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { DataPagination } from '@/components/data-pagination';
 import { EmptyState } from '@/components/empty-state';
 import { FormSelect } from '@/components/form-select';
-import { visitWithQuery } from '@/components/search-form';
+import { useTypingPause, visitWithQuery } from '@/components/search-form';
 import { SearchInput } from '@/components/search-input';
 import { TablePanel } from '@/components/table-panel';
 import { Button } from '@/components/ui/button';
@@ -43,31 +43,59 @@ export function SupplyCardList({
 }: Props) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [fundCluster, setFundCluster] = useState(filters.fund_cluster ?? '');
+    const pause = useTypingPause();
+    // What the list is showing, so a pause or Enter doesn't reload it.
+    const applied = useRef(
+        `${(filters.search ?? '').trim()}|${filters.fund_cluster ?? ''}`,
+    );
+
+    // No button: typing applies once it pauses, a fund cluster right away.
+    const visit = (nextSearch: string, nextCluster: string) => {
+        pause.cancel();
+
+        if (`${nextSearch}|${nextCluster}` === applied.current) {
+            return;
+        }
+
+        applied.current = `${nextSearch}|${nextCluster}`;
+        visitWithQuery(indexUrl, {
+            search: nextSearch,
+            fund_cluster: nextCluster,
+        });
+    };
 
     const apply = (event: FormEvent) => {
         event.preventDefault();
-        visitWithQuery(indexUrl, {
-            search: search.trim(),
-            fund_cluster: fundCluster,
-        });
+        visit(search.trim(), fundCluster);
     };
 
     return (
         <div className="space-y-4">
             <form
                 onSubmit={apply}
+                role="search"
                 className="flex flex-col gap-2 sm:flex-row sm:justify-end"
             >
                 <SearchInput
                     value={search}
-                    onValueChange={setSearch}
+                    onValueChange={(value) => {
+                        setSearch(value);
+                        pause.schedule(() => visit(value.trim(), fundCluster));
+                    }}
+                    onClear={() => {
+                        setSearch('');
+                        visit('', fundCluster);
+                    }}
                     placeholder="Search item name or stock no..."
                     aria-label="Search supplies"
                     className="sm:w-72"
                 />
                 <FormSelect
                     value={fundCluster}
-                    onValueChange={(value) => setFundCluster(value)}
+                    onValueChange={(value) => {
+                        setFundCluster(value);
+                        visit(search.trim(), value);
+                    }}
                     className="sm:w-48"
                     aria-label="Fund cluster"
                     options={[
@@ -78,9 +106,6 @@ export function SupplyCardList({
                         })),
                     ]}
                 />
-                <Button type="submit" variant="secondary">
-                    Filter
-                </Button>
             </form>
 
             <TablePanel>

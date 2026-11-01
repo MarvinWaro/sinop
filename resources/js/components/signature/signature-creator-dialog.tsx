@@ -6,6 +6,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import SignaturePad from 'signature_pad';
 import InputError from '@/components/input-error';
+import { guardImage } from '@/components/signature/signature-box';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -512,6 +513,7 @@ function UploadPanel({ produce, ink, onReadyChange }: PanelProps) {
                     <img
                         src={preview}
                         alt="Your signature, cleaned"
+                        {...guardImage}
                         className="max-h-full max-w-full object-contain"
                     />
                 ) : (

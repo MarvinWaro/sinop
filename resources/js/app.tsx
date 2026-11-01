@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import { initializeColorTheme } from '@/hooks/use-color-theme';
+import { pageTransitions } from '@/lib/page-transitions';
 import AppLayout from '@/layouts/app-layout';
 import AuthLayout from '@/layouts/auth-layout';
 import SettingsLayout from '@/layouts/settings/layout';
@@ -14,6 +15,7 @@ void createInertiaApp({
     layout: (name) => {
         switch (true) {
             case name === 'welcome':
+            case name.startsWith('public/'):
                 return null;
             case name.startsWith('auth/'):
                 return AuthLayout;
@@ -24,6 +26,10 @@ void createInertiaApp({
         }
     },
     strictMode: true,
+    // Moving to another page cross-fades; updates within a page don't.
+    defaults: {
+        visitOptions: pageTransitions,
+    },
     withApp(app) {
         return (
             <TooltipProvider delayDuration={0}>

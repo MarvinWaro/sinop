@@ -1,4 +1,4 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import {
     ArrowLeft,
     MessagesSquare,
@@ -6,34 +6,46 @@ import {
     Paperclip,
     SendHorizontal,
     SquarePen,
+    X,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import type { FormEvent } from 'react';
+import {
+    Fragment,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { toast } from '@/lib/toast';
 import { EmptyState } from '@/components/empty-state';
 import {
     ContextPanel,
     ConversationRow,
     DayDivider,
     dayLabel,
+    fileSize,
+    firstName,
     kindLabels,
     MessageBubble,
     otherParty,
     PersonAvatar,
-    previewOnly,
-    SystemEvent,
+    statusLineText,
+    StatusChip,
+    SystemLine,
     TypingDots,
-    useMessagesSide,
 } from '@/components/messages/message-parts';
-import { sampleConversationsFor } from '@/components/messages/sample-conversations';
-import type { Person } from '@/components/messages/message-parts';
-import type {
-    SampleConversation,
-    SampleMessage,
-    Side,
-} from '@/components/messages/sample-conversations';
+import { NewConversationDialog } from '@/components/messages/new-conversation-dialog';
+import type { ConversationPreset } from '@/components/messages/new-conversation-dialog';
+import {
+    errorText,
+    useConversationList,
+    useMessagesSignals,
+    useThread,
+    useTypingPing,
+} from '@/components/messages/use-messages';
 import { SearchInput } from '@/components/search-input';
 import { RisStatusBadge } from '@/components/status-badges';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     Sheet,
@@ -42,166 +54,177 @@ import {
     SheetHeader,
     SheetTitle,
 } from '@/components/ui/sheet';
+import { Spinner } from '@/components/ui/spinner';
+import { patchJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
-import { index as messagesIndex } from '@/routes/messages';
+import {
+    index as messagesIndex,
+    status as statusRoute,
+} from '@/routes/messages';
+import type {
+    ConversationList,
+    ConversationSummary,
+    MessagePerson,
+    MessagesOpening,
+    MessagesTab,
+    Thread,
+    ThreadEvent,
+    ThreadMessage,
+} from '@/types';
 
-type Tab = 'all' | SampleConversation['kind'];
-
-const TABS: { key: Tab; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'request', label: 'Requests' },
-    { key: 'concern', label: 'Concerns' },
-];
-
-const QUICK_REPLIES = {
-    office: [
-        'Ready for pickup, 2 to 4 PM',
-        'Noted, we will check',
-        'Please confirm receipt',
-    ],
-    requester: ['Thank you!', 'On my way', 'Received, thanks'],
+type Props = {
+    isOffice: boolean;
+    list: ConversationList;
+    people: MessagePerson[];
+    opening: MessagesOpening;
+    fileTypes: string[];
 };
+
+const MAX_FILES = 4;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 /** A gap this long starts a new group (name and time shown again). */
 const GROUP_GAP_MS = 5 * 60_000;
 
 /**
- * Messages, as a preview with sample data: questions and updates about
- * requests and concerns, between a requester and the supply office. Office
- * users (the admin side) see the shared inbox; staff see their own threads.
- * Nothing is sent or saved.
+ * Messages: questions and updates about requests and concerns, between a
+ * requester and the supply office. The office (the admin side) sees the
+ * shared inbox; everyone else sees their own conversations. New messages
+ * and typing arrive live (useInboxUpdates), or with the regular checks.
  */
-export default function Messages() {
-    const { auth } = usePage().props;
-    const mySide = useMessagesSide();
-    const officeView = mySide === 'office';
+export default function Messages({
+    isOffice,
+    list,
+    people,
+    opening,
+    fileTypes,
+}: Props) {
+    const officeView = isOffice;
+    const conversations = useConversationList(list);
+    const { upsert, refreshRow, markSeen } = conversations;
 
-    const [conversations, setConversations] = useState<SampleConversation[]>(
-        () =>
-            officeView
-                ? sampleConversationsFor(mySide)
-                : // Staff see the sample as their own requests and concerns.
-                  sampleConversationsFor(mySide).map((conversation) => ({
-                      ...conversation,
-                      requester: {
-                          name: auth.user.name,
-                          photo: auth.user.avatar ?? null,
-                          division:
-                              auth.user.department?.name ??
-                              conversation.requester.division,
-                      },
-                  })),
+    const [selectedId, setSelectedId] = useState<number | null>(
+        opening && 'conversation' in opening ? opening.conversation : null,
     );
-    const [selectedId, setSelectedId] = useState(conversations[0].id);
-    const [tab, setTab] = useState<Tab>('all');
-    const [search, setSearch] = useState('');
-    const [draft, setDraft] = useState('');
-    const [threadOpen, setThreadOpen] = useState(false);
+    const [threadOpen, setThreadOpen] = useState(
+        Boolean(opening && 'conversation' in opening),
+    );
     const [detailsOpen, setDetailsOpen] = useState(false);
-    const thread = useRef<HTMLDivElement>(null);
-
-    const selected =
-        conversations.find((conversation) => conversation.id === selectedId) ??
-        conversations[0];
-
-    const term = search.trim().toLowerCase();
-    const visible = useMemo(
-        () =>
-            conversations.filter(
-                (conversation) =>
-                    (tab === 'all' || conversation.kind === tab) &&
-                    (!term ||
-                        `${conversation.title} ${conversation.requester.name} ${conversation.messages.map((m) => m.body ?? '').join(' ')}`
-                            .toLowerCase()
-                            .includes(term)),
-            ),
-        [conversations, tab, term],
+    const [preset, setPreset] = useState<ConversationPreset | null>(
+        opening && 'ris' in opening ? opening : null,
     );
+    const [starting, setStarting] = useState(Boolean(preset));
 
-    const count = (key: Tab) =>
-        key === 'all'
-            ? conversations.length
-            : conversations.filter((conversation) => conversation.kind === key)
-                  .length;
+    const onSummary = useCallback(
+        (row: ConversationSummary) => upsert({ ...row, unread: 0 }),
+        [upsert],
+    );
+    const {
+        thread,
+        loading,
+        loadingEarlier,
+        loadEarlier,
+        refresh,
+        send,
+        retry,
+        setThread,
+    } = useThread(selectedId, onSummary);
 
-    // The newest message is in view when a thread opens or grows.
-    useEffect(() => {
-        thread.current?.scrollTo({ top: thread.current.scrollHeight });
-    }, [selectedId, selected.messages.length]);
+    // Live: refresh the open thread, or the row that changed.
+    const typing = useMessagesSignals((signal) => {
+        if (!signal) {
+            conversations.reload();
+            void refresh();
 
-    const update = (
-        id: string,
-        change: (conversation: SampleConversation) => SampleConversation,
-    ) =>
-        setConversations((current) =>
-            current.map((conversation) =>
-                conversation.id === id ? change(conversation) : conversation,
-            ),
-        );
-
-    const open = (conversation: SampleConversation) => {
-        setSelectedId(conversation.id);
-        setThreadOpen(true);
-        setDraft('');
-        update(conversation.id, (c) => ({ ...c, unread: 0 }));
-    };
-
-    const send = (event?: FormEvent) => {
-        event?.preventDefault();
-        const body = draft.trim();
-
-        if (!body) {
             return;
         }
 
-        const message: SampleMessage = {
-            id: `local-${Date.now()}`,
-            side: mySide,
-            ...(officeView
-                ? { author: auth.user.name, role: 'Supply office' }
-                : {}),
-            at: new Date().toISOString(),
-            body,
-        };
+        if (signal.conversation === selectedId) {
+            void refresh().then(() => refreshRow(signal.conversation));
+        } else {
+            void refreshRow(signal.conversation);
+        }
+    });
 
-        update(selected.id, (c) => ({
-            ...c,
-            typing: false,
-            status: officeView ? 'open' : 'waiting',
-            messages: [...c.messages, message],
-        }));
-        setDraft('');
+    /** Send, then bring the row (status, tab counts) up to date. */
+    const sendMessage = async (body: string, files: File[]) => {
+        const target = selectedId;
+        const sent = await send(body, files);
+
+        if (sent && target !== null) {
+            void refreshRow(target);
+        }
+
+        return sent;
     };
 
-    const toggleResolved = () =>
-        update(selected.id, (c) => ({
-            ...c,
-            status: c.status === 'resolved' ? 'open' : 'resolved',
-            messages: [
-                ...c.messages,
-                {
-                    id: `local-${Date.now()}`,
-                    side: 'system',
-                    at: new Date().toISOString(),
-                    body: `${c.status === 'resolved' ? 'Reopened' : 'Marked resolved'} by ${auth.user.name}`,
-                },
-            ],
-        }));
+    // Wide screens show a thread beside the list: the newest, to start with.
+    useEffect(() => {
+        if (window.matchMedia('(min-width: 768px)').matches) {
+            setSelectedId((current) => current ?? list.data[0]?.id ?? null);
+        }
+    }, [list]);
 
-    const other = otherParty(selected, officeView);
-    const otherName = officeView
-        ? selected.requester.name.split(' ')[0]
-        : 'the supply office';
-    // Who is typing in the sample: the requester, or the officer on it.
-    const typist: Person = officeView
-        ? other
-        : { name: 'Juan Dela Cruz', role: 'Supply Officer' };
+    const open = (conversation: ConversationSummary) => {
+        setSelectedId(conversation.id);
+        setThreadOpen(true);
+        markSeen(conversation.id);
+    };
+
+    const started = (conversation: ConversationSummary) => {
+        upsert(conversation);
+        void refreshRow(conversation.id);
+        setPreset(null);
+
+        if (conversation.id === selectedId) {
+            void refresh();
+        } else {
+            setSelectedId(conversation.id);
+        }
+
+        setThreadOpen(true);
+    };
+
+    const setResolved = async (resolved: boolean) => {
+        if (!thread) {
+            return;
+        }
+
+        try {
+            const { conversation } = await patchJson<{
+                conversation: ConversationSummary;
+            }>(statusRoute.url(thread.conversation.id), { resolved });
+            setThread((current) =>
+                current ? { ...current, conversation } : current,
+            );
+            upsert(conversation);
+            void refresh();
+        } catch (error) {
+            toast.error(
+                errorText(error, 'That did not go through. Try again.'),
+            );
+        }
+    };
+
+    const selected =
+        thread?.conversation ??
+        conversations.rows.find((row) => row.id === selectedId) ??
+        null;
+    const tabs: { key: MessagesTab; label: string }[] = [
+        { key: 'all', label: 'All' },
+        { key: 'request', label: 'Requests' },
+        { key: 'concern', label: 'Concerns' },
+        {
+            key: 'waiting',
+            label: officeView ? 'Needs reply' : 'Waiting',
+        },
+    ];
 
     return (
         <>
             <Head title="Messages" />
             <div className="flex h-[calc(100svh-4rem)] md:h-[calc(100svh-5rem)] md:p-4">
-                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden border-y bg-card md:grid-cols-[20rem_minmax(0,1fr)] md:rounded-xl md:border xl:grid-cols-[20rem_minmax(0,1fr)_19rem]">
+                <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] overflow-hidden border-y bg-card md:grid-cols-[18rem_minmax(0,1fr)] md:rounded-xl md:border lg:grid-cols-[23rem_minmax(0,1fr)] xl:grid-cols-[23rem_minmax(0,1fr)_19rem]">
                     {/* Conversations */}
                     <aside
                         className={cn(
@@ -210,17 +233,9 @@ export default function Messages() {
                         )}
                     >
                         <div className="flex items-center justify-between gap-2 px-4 pt-4">
-                            <div className="flex items-center gap-2">
-                                <h1 className="text-lg font-semibold tracking-tight">
-                                    Messages
-                                </h1>
-                                <Badge
-                                    variant="outline"
-                                    className="text-[11px] font-normal text-muted-foreground"
-                                >
-                                    Preview
-                                </Badge>
-                            </div>
+                            <h1 className="text-lg font-semibold tracking-tight">
+                                Messages
+                            </h1>
                             <Button
                                 type="button"
                                 variant="ghost"
@@ -236,9 +251,10 @@ export default function Messages() {
                                         ? 'New conversation'
                                         : 'Ask the supply office'
                                 }
-                                onClick={() =>
-                                    previewOnly('starting a conversation')
-                                }
+                                onClick={() => {
+                                    setPreset(null);
+                                    setStarting(true);
+                                }}
                             >
                                 <SquarePen className="size-4" />
                             </Button>
@@ -247,203 +263,161 @@ export default function Messages() {
                             <SearchInput
                                 placeholder="Search messages"
                                 aria-label="Search messages"
-                                value={search}
-                                onValueChange={setSearch}
+                                value={conversations.search}
+                                onValueChange={conversations.setSearch}
                             />
                         </div>
                         <div
                             role="tablist"
                             aria-label="Show"
-                            className="flex gap-4 border-b px-4"
+                            className="flex [scrollbar-width:none] gap-3 overflow-x-auto overflow-y-hidden border-b px-4"
                         >
-                            {TABS.map(({ key, label }) => (
+                            {tabs.map(({ key, label }) => (
                                 <button
                                     key={key}
                                     type="button"
                                     role="tab"
-                                    aria-selected={tab === key}
-                                    onClick={() => setTab(key)}
+                                    aria-selected={conversations.tab === key}
+                                    onClick={() => conversations.setTab(key)}
                                     className={cn(
-                                        '-mb-px border-b-2 pb-2 text-sm transition-colors',
-                                        tab === key
+                                        '-mb-px shrink-0 border-b-2 pb-2 text-sm whitespace-nowrap transition-colors',
+                                        conversations.tab === key
                                             ? 'border-primary font-medium text-foreground'
                                             : 'border-transparent text-muted-foreground hover:text-foreground',
                                     )}
                                 >
                                     {label}
-                                    <span className="ml-1 text-xs tabular-nums opacity-70">
-                                        {count(key)}
-                                    </span>
+                                    {conversations.counts[key] !==
+                                        undefined && (
+                                        <span className="ml-1 text-xs tabular-nums opacity-70">
+                                            {conversations.counts[key]}
+                                        </span>
+                                    )}
                                 </button>
                             ))}
                         </div>
-                        {visible.length === 0 ? (
-                            <EmptyState
-                                icon={MessagesSquare}
-                                title="No conversations match"
-                                className="flex-1"
-                            />
+                        {conversations.rows.length === 0 ? (
+                            conversations.loading ? (
+                                <div className="flex flex-1 items-center justify-center">
+                                    <Spinner />
+                                </div>
+                            ) : (
+                                <EmptyState
+                                    icon={MessagesSquare}
+                                    title={
+                                        conversations.search ||
+                                        conversations.tab !== 'all'
+                                            ? 'No conversations match'
+                                            : 'No conversations yet'
+                                    }
+                                    description={
+                                        conversations.search ||
+                                        conversations.tab !== 'all'
+                                            ? undefined
+                                            : officeView
+                                              ? 'Questions from requesters show up here.'
+                                              : 'Ask the supply office about a request or a concern.'
+                                    }
+                                    className="flex-1"
+                                />
+                            )
                         ) : (
                             <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
-                                {visible.map((conversation) => (
+                                {conversations.rows.map((conversation) => (
                                     <ConversationRow
                                         key={conversation.id}
-                                        conversation={conversation}
+                                        // The open conversation is read as it arrives.
+                                        conversation={
+                                            conversation.id === selectedId
+                                                ? { ...conversation, unread: 0 }
+                                                : conversation
+                                        }
                                         selected={
-                                            conversation.id === selected.id
+                                            conversation.id === selectedId
                                         }
                                         officeView={officeView}
+                                        typing={typing[conversation.id]}
                                         onSelect={() => open(conversation)}
                                     />
                                 ))}
+                                {conversations.hasMore && (
+                                    <li className="p-2">
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full"
+                                            disabled={conversations.loading}
+                                            onClick={conversations.loadMore}
+                                        >
+                                            {conversations.loading && (
+                                                <Spinner />
+                                            )}
+                                            Show more
+                                        </Button>
+                                    </li>
+                                )}
                             </ul>
                         )}
-                        <p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-                            Sample data. Nothing you send is saved.
-                        </p>
                     </aside>
 
                     {/* Thread */}
                     <section
-                        aria-label={selected.title}
+                        aria-label={selected?.subject ?? 'Conversation'}
                         className={cn(
                             'min-h-0 flex-col',
                             threadOpen ? 'flex' : 'hidden md:flex',
                         )}
                     >
-                        <header className="flex items-center gap-3 border-b px-3 py-3 sm:px-4">
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 md:hidden"
-                                aria-label="Back to conversations"
-                                onClick={() => setThreadOpen(false)}
-                            >
-                                <ArrowLeft />
-                            </Button>
-                            <PersonAvatar
-                                person={other}
-                                kind={selected.kind}
-                                className="hidden sm:flex"
-                            />
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                    <h2 className="truncate font-medium">
-                                        {officeView
-                                            ? selected.requester.name
-                                            : selected.title}
-                                    </h2>
-                                    {selected.ris && (
-                                        <RisStatusBadge
-                                            slip={selected.ris}
-                                            className="hidden sm:inline-flex"
-                                        />
-                                    )}
-                                </div>
-                                <p className="truncate text-xs text-muted-foreground">
-                                    {officeView
-                                        ? `${kindLabels[selected.kind]}: ${selected.title} · ${selected.requester.division}`
-                                        : 'Supply office · 3 people can reply'}
-                                </p>
-                            </div>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={toggleResolved}
-                            >
-                                {selected.status === 'resolved'
-                                    ? 'Reopen'
-                                    : 'Mark resolved'}
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 xl:hidden"
-                                aria-label="Details"
-                                onClick={() => setDetailsOpen(true)}
-                            >
-                                <PanelRight className="size-4" />
-                            </Button>
-                        </header>
-
-                        <div
-                            ref={thread}
-                            className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4 sm:px-6"
-                        >
-                            <ThreadMessages
-                                conversation={selected}
-                                mySide={mySide}
-                            />
-                            {selected.typing && <TypingDots person={typist} />}
-                        </div>
-
-                        <div className="border-t p-3 sm:px-4">
-                            <div className="mb-2 flex gap-2 overflow-x-auto">
-                                {QUICK_REPLIES[
-                                    mySide === 'office' ? 'office' : 'requester'
-                                ].map((reply) => (
-                                    <button
-                                        key={reply}
-                                        type="button"
-                                        onClick={() => setDraft(reply)}
-                                        className="shrink-0 rounded-full border px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                                    >
-                                        {reply}
-                                    </button>
-                                ))}
-                            </div>
-                            <form
-                                onSubmit={send}
-                                className="flex items-end gap-1 rounded-xl border bg-background p-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
-                            >
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon"
-                                    className="size-9 text-muted-foreground"
-                                    aria-label="Attach a file"
-                                    onClick={() =>
-                                        previewOnly('attaching files')
-                                    }
-                                >
-                                    <Paperclip className="size-4" />
-                                </Button>
-                                <textarea
-                                    rows={1}
-                                    value={draft}
-                                    onChange={(e) => setDraft(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && !e.shiftKey) {
-                                            e.preventDefault();
-                                            send();
-                                        }
-                                    }}
-                                    placeholder={`Message ${otherName}…`}
-                                    aria-label="Message"
-                                    className="[field-sizing:content] max-h-32 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                        {selected ? (
+                            <>
+                                <ThreadHeader
+                                    conversation={selected}
+                                    officeView={officeView}
+                                    officeCount={thread?.office.length ?? 0}
+                                    onBack={() => setThreadOpen(false)}
+                                    onDetails={() => setDetailsOpen(true)}
+                                    onResolve={setResolved}
                                 />
-                                <Button
-                                    type="submit"
-                                    size="icon"
-                                    className="size-9"
-                                    disabled={!draft.trim()}
-                                    aria-label="Send"
-                                >
-                                    <SendHorizontal className="size-4" />
-                                </Button>
-                            </form>
-                        </div>
+                                <ThreadBody
+                                    thread={
+                                        thread?.conversation.id === selected.id
+                                            ? thread
+                                            : null
+                                    }
+                                    loading={loading}
+                                    loadingEarlier={loadingEarlier}
+                                    onLoadEarlier={loadEarlier}
+                                    onRetry={retry}
+                                    typing={typing[selected.id]}
+                                />
+                                <Composer
+                                    key={selected.id}
+                                    conversation={selected}
+                                    officeView={officeView}
+                                    fileTypes={fileTypes}
+                                    disabled={!thread}
+                                    onSend={sendMessage}
+                                />
+                            </>
+                        ) : (
+                            <EmptyState
+                                icon={MessagesSquare}
+                                title="Choose a conversation"
+                                description="Or start a new one with the pencil button."
+                                className="flex-1"
+                            />
+                        )}
                     </section>
 
                     {/* What it's about */}
                     <aside className="hidden min-h-0 overflow-y-auto border-l xl:block">
-                        <ContextPanel
-                            conversation={selected}
-                            officeView={officeView}
-                        />
+                        {thread && (
+                            <ContextPanel
+                                thread={thread}
+                                officeView={officeView}
+                            />
+                        )}
                     </aside>
                 </div>
             </div>
@@ -451,19 +425,25 @@ export default function Messages() {
             <Sheet open={detailsOpen} onOpenChange={setDetailsOpen}>
                 <SheetContent className="w-[min(22rem,100vw)] overflow-y-auto p-0 xl:hidden">
                     <SheetHeader className="border-b">
-                        <SheetTitle>{selected.title}</SheetTitle>
+                        <SheetTitle>{selected?.subject}</SheetTitle>
                         <SheetDescription>
-                            {selected.kind === 'request'
-                                ? 'The request this conversation is about'
-                                : 'The concern this conversation is about'}
+                            What this conversation is about, and who is in it
                         </SheetDescription>
                     </SheetHeader>
-                    <ContextPanel
-                        conversation={selected}
-                        officeView={officeView}
-                    />
+                    {thread && (
+                        <ContextPanel thread={thread} officeView={officeView} />
+                    )}
                 </SheetContent>
             </Sheet>
+
+            <NewConversationDialog
+                open={starting}
+                onOpenChange={setStarting}
+                officeView={officeView}
+                people={people}
+                preset={preset}
+                onStarted={started}
+            />
         </>
     );
 }
@@ -472,53 +452,408 @@ Messages.layout = {
     breadcrumbs: [{ title: 'Messages', href: messagesIndex() }],
 };
 
-/**
- * The thread: a divider for each day, the request's own events in the
- * middle, and bubbles grouped while the same person keeps writing.
- */
-function ThreadMessages({
+function ThreadHeader({
     conversation,
-    mySide,
+    officeView,
+    officeCount,
+    onBack,
+    onDetails,
+    onResolve,
 }: {
-    conversation: SampleConversation;
-    mySide: Side;
+    conversation: ConversationSummary;
+    officeView: boolean;
+    officeCount: number;
+    onBack: () => void;
+    onDetails: () => void;
+    onResolve: (resolved: boolean) => void;
 }) {
-    const { messages, requester } = conversation;
-    const authorOf = (message: SampleMessage): Person =>
-        message.side === 'requester'
-            ? { ...requester, role: 'Requester' }
-            : { name: message.author ?? 'Supply office', role: message.role };
+    const other = otherParty(conversation, officeView);
+    const asOffice = officeView && !conversation.mine;
 
-    return messages.map((message, index) => {
-        const previous = messages[index - 1];
-        const next = messages[index + 1];
-        const newDay =
-            !previous ||
-            new Date(previous.at).toDateString() !==
-                new Date(message.at).toDateString();
-        const sameGroup = (a?: SampleMessage, b?: SampleMessage) =>
-            !!a &&
-            !!b &&
-            a.side === b.side &&
-            a.author === b.author &&
-            Math.abs(Date.parse(b.at) - Date.parse(a.at)) < GROUP_GAP_MS &&
-            new Date(a.at).toDateString() === new Date(b.at).toDateString();
+    return (
+        <header className="flex items-center gap-3 border-b px-3 py-3 sm:px-4">
+            <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 md:hidden"
+                aria-label="Back to conversations"
+                onClick={onBack}
+            >
+                <ArrowLeft />
+            </Button>
+            <PersonAvatar
+                person={other}
+                kind={conversation.kind}
+                className="hidden sm:flex"
+            />
+            <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                    <h2 className="truncate font-medium">
+                        {asOffice ? other.name : conversation.subject}
+                    </h2>
+                    {conversation.ris ? (
+                        <RisStatusBadge
+                            slip={conversation.ris}
+                            className="hidden sm:inline-flex"
+                        />
+                    ) : (
+                        conversation.status !== 'open' && (
+                            <StatusChip
+                                status={conversation.status}
+                                officeView={asOffice}
+                            />
+                        )
+                    )}
+                </div>
+                <p className="truncate text-xs text-muted-foreground">
+                    {asOffice
+                        ? [
+                              `${kindLabels[conversation.kind]}: ${conversation.subject}`,
+                              conversation.requester?.division,
+                          ]
+                              .filter(Boolean)
+                              .join(' · ')
+                        : officeCount > 0
+                          ? `Supply office · ${officeCount} ${officeCount === 1 ? 'person' : 'people'} can reply`
+                          : 'Supply office'}
+                </p>
+            </div>
+            <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onResolve(conversation.status !== 'resolved')}
+            >
+                {conversation.status === 'resolved'
+                    ? 'Reopen'
+                    : 'Mark resolved'}
+            </Button>
+            <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-8 xl:hidden"
+                aria-label="Details"
+                onClick={onDetails}
+            >
+                <PanelRight className="size-4" />
+            </Button>
+        </header>
+    );
+}
 
-        return (
-            <Fragment key={message.id}>
-                {newDay && <DayDivider label={dayLabel(message.at)} />}
-                {message.side === 'system' ? (
-                    <SystemEvent message={message} />
-                ) : (
-                    <MessageBubble
-                        message={message}
-                        author={authorOf(message)}
-                        mine={message.side === mySide}
-                        showAuthor={newDay || !sameGroup(previous, message)}
-                        showTime={!sameGroup(message, next)}
-                    />
-                )}
-            </Fragment>
+type Entry =
+    | { type: 'message'; key: string; at: string; message: ThreadMessage }
+    | { type: 'event'; key: string; at: string; event: ThreadEvent };
+
+/**
+ * The thread: a divider for each day, the request's own history and status
+ * changes in the middle, and bubbles grouped while one person keeps writing.
+ */
+function ThreadBody({
+    thread,
+    loading,
+    loadingEarlier,
+    onLoadEarlier,
+    onRetry,
+    typing,
+}: {
+    thread: Thread | null;
+    loading: boolean;
+    loadingEarlier: boolean;
+    onLoadEarlier: () => void;
+    onRetry: (message: ThreadMessage) => void;
+    typing?: string;
+}) {
+    const box = useRef<HTMLDivElement>(null);
+    const pinned = useRef(true);
+    const newestKey =
+        thread?.messages.at(-1)?.local?.key ?? thread?.messages.at(-1)?.id;
+
+    // Messages and the request's history, in time order. History older than
+    // the first loaded message waits until earlier messages are loaded.
+    const entries = useMemo<Entry[]>(() => {
+        if (!thread) {
+            return [];
+        }
+
+        const from = thread.has_earlier ? thread.messages[0]?.at : undefined;
+        const events: Entry[] = thread.events
+            .filter((event) => !from || event.at >= from)
+            .map((event) => ({
+                type: 'event',
+                key: `e${event.id}`,
+                at: event.at,
+                event,
+            }));
+        const messages: Entry[] = thread.messages.map((message) => ({
+            type: 'message',
+            key: message.local?.key ?? `m${message.id}`,
+            at: message.at,
+            message,
+        }));
+
+        return [...events, ...messages].sort((a, b) =>
+            a.at === b.at
+                ? a.type === 'event'
+                    ? -1
+                    : 1
+                : a.at.localeCompare(b.at),
         );
-    });
+    }, [thread]);
+
+    // Stay at the newest message when it grows, unless the reader scrolled up.
+    useEffect(() => {
+        if (pinned.current) {
+            box.current?.scrollTo({ top: box.current.scrollHeight });
+        }
+    }, [newestKey, typing, thread?.conversation.id]);
+
+    useEffect(() => {
+        pinned.current = true;
+    }, [thread?.conversation.id]);
+
+    if (!thread) {
+        return (
+            <div className="flex flex-1 items-center justify-center">
+                {loading && <Spinner />}
+            </div>
+        );
+    }
+
+    // Bubbles in a row from one person, close in time, share a name and time.
+    const sameGroup = (a?: Entry, b?: Entry) =>
+        a?.type === 'message' &&
+        b?.type === 'message' &&
+        a.message.side !== 'system' &&
+        a.message.side === b.message.side &&
+        a.message.author?.id === b.message.author?.id &&
+        Math.abs(Date.parse(b.at) - Date.parse(a.at)) < GROUP_GAP_MS &&
+        new Date(a.at).toDateString() === new Date(b.at).toDateString();
+
+    return (
+        <div
+            ref={box}
+            onScroll={(event) => {
+                const el = event.currentTarget;
+                pinned.current =
+                    el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            }}
+            className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-4 sm:px-6"
+        >
+            {thread.has_earlier && (
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="self-center"
+                    disabled={loadingEarlier}
+                    onClick={onLoadEarlier}
+                >
+                    {loadingEarlier && <Spinner />}
+                    Load earlier messages
+                </Button>
+            )}
+            {entries.map((entry, index) => {
+                const previous = entries[index - 1];
+                const next = entries[index + 1];
+                const newDay =
+                    !previous ||
+                    new Date(previous.at).toDateString() !==
+                        new Date(entry.at).toDateString();
+
+                return (
+                    <Fragment key={entry.key}>
+                        {newDay && <DayDivider label={dayLabel(entry.at)} />}
+                        {entry.type === 'event' ? (
+                            <SystemLine text={entry.event.body} at={entry.at} />
+                        ) : entry.message.side === 'system' ? (
+                            <SystemLine
+                                text={statusLineText(entry.message)}
+                                at={entry.at}
+                            />
+                        ) : (
+                            <MessageBubble
+                                message={entry.message}
+                                showAuthor={
+                                    newDay || !sameGroup(previous, entry)
+                                }
+                                showTime={!sameGroup(entry, next)}
+                                onRetry={() => onRetry(entry.message)}
+                            />
+                        )}
+                    </Fragment>
+                );
+            })}
+            {typing && <TypingDots name={typing} />}
+        </div>
+    );
+}
+
+/** Writing a message: Enter sends, Shift+Enter starts a new line. */
+function Composer({
+    conversation,
+    officeView,
+    fileTypes,
+    disabled,
+    onSend,
+}: {
+    conversation: ConversationSummary;
+    officeView: boolean;
+    fileTypes: string[];
+    disabled: boolean;
+    onSend: (body: string, files: File[]) => Promise<boolean | undefined>;
+}) {
+    const [draft, setDraft] = useState('');
+    const [files, setFiles] = useState<File[]>([]);
+    const picker = useRef<HTMLInputElement>(null);
+    const ping = useTypingPing(conversation.id);
+    const asOffice = officeView && !conversation.mine;
+    const otherName =
+        asOffice && conversation.requester
+            ? firstName(conversation.requester.name)
+            : 'the supply office';
+    const accept = fileTypes.map((type) => `.${type}`).join(',');
+
+    const pick = (event: ChangeEvent<HTMLInputElement>) => {
+        const chosen = Array.from(event.target.files ?? []);
+        event.target.value = '';
+        const tooBig = chosen.filter((file) => file.size > MAX_FILE_BYTES);
+        const wrongType = chosen.filter(
+            (file) =>
+                !fileTypes.includes(
+                    file.name.split('.').pop()?.toLowerCase() ?? '',
+                ),
+        );
+
+        if (tooBig.length) {
+            toast.error(`${tooBig[0].name} is over 10 MB.`);
+        }
+
+        if (wrongType.length) {
+            toast.error(
+                `${wrongType[0].name}: attach photos, PDFs or spreadsheets.`,
+            );
+        }
+
+        const fine = chosen.filter(
+            (file) => !tooBig.includes(file) && !wrongType.includes(file),
+        );
+        const next = [...files, ...fine];
+
+        if (next.length > MAX_FILES) {
+            toast.error(`Attach up to ${MAX_FILES} files at a time.`);
+        }
+
+        setFiles(next.slice(0, MAX_FILES));
+    };
+
+    const submit = (event?: FormEvent) => {
+        event?.preventDefault();
+        const body = draft.trim();
+
+        if ((!body && files.length === 0) || disabled) {
+            return;
+        }
+
+        // Cleared at once; a failed send stays in the thread with "Try again".
+        void onSend(body, files);
+        setDraft('');
+        setFiles([]);
+    };
+
+    return (
+        <div className="border-t p-3 sm:px-4">
+            {files.length > 0 && (
+                <ul
+                    className="mb-2 flex flex-wrap gap-2"
+                    aria-label="Files to send"
+                >
+                    {files.map((file, index) => (
+                        <li
+                            key={`${file.name}-${index}`}
+                            className="flex max-w-56 items-center gap-2 rounded-full border bg-muted/40 py-1 pr-1 pl-3 text-xs"
+                        >
+                            <span className="truncate">{file.name}</span>
+                            <span className="shrink-0 text-muted-foreground">
+                                {fileSize(file.size)}
+                            </span>
+                            <button
+                                type="button"
+                                className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                                aria-label={`Remove ${file.name}`}
+                                onClick={() =>
+                                    setFiles(
+                                        files.filter((_, i) => i !== index),
+                                    )
+                                }
+                            >
+                                <X className="size-3.5" />
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            <form
+                onSubmit={submit}
+                className="flex items-end gap-1 rounded-xl border bg-background p-1.5 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30"
+            >
+                <input
+                    ref={picker}
+                    type="file"
+                    multiple
+                    accept={accept}
+                    className="hidden"
+                    onChange={pick}
+                />
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-9 text-muted-foreground"
+                    aria-label="Attach photos, PDFs or spreadsheets"
+                    title="Attach photos, PDFs or spreadsheets (up to 10 MB each)"
+                    disabled={disabled || files.length >= MAX_FILES}
+                    onClick={() => picker.current?.click()}
+                >
+                    <Paperclip className="size-4" />
+                </Button>
+                <textarea
+                    rows={1}
+                    value={draft}
+                    maxLength={5000}
+                    onChange={(event) => {
+                        setDraft(event.target.value);
+
+                        if (event.target.value.trim()) {
+                            ping();
+                        }
+                    }}
+                    onKeyDown={(event) => {
+                        if (
+                            event.key === 'Enter' &&
+                            !event.shiftKey &&
+                            !event.nativeEvent.isComposing
+                        ) {
+                            event.preventDefault();
+                            submit();
+                        }
+                    }}
+                    placeholder={`Message ${otherName}…`}
+                    aria-label="Message"
+                    className="[field-sizing:content] max-h-32 min-h-9 flex-1 resize-none bg-transparent py-2 text-sm outline-none placeholder:text-muted-foreground"
+                />
+                <Button
+                    type="submit"
+                    size="icon"
+                    className="size-9"
+                    disabled={disabled || (!draft.trim() && files.length === 0)}
+                    aria-label="Send"
+                >
+                    <SendHorizontal className="size-4" />
+                </Button>
+            </form>
+        </div>
+    );
 }

@@ -48,7 +48,8 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
                             </Link>
                         </SidebarMenuButton>
                         {item.badge ? (
-                            <SidebarMenuBadge>
+                            // Something waiting: a red count, like the header's.
+                            <SidebarMenuBadge className="h-5 min-w-5 rounded-full bg-alert px-1.5 text-[11px] font-semibold text-white shadow-alert peer-hover/menu-button:text-white peer-data-[active=true]/menu-button:text-white">
                                 {item.badge > 99 ? '99+' : item.badge}
                             </SidebarMenuBadge>
                         ) : null}

@@ -7,6 +7,8 @@ use App\Enums\ActivityModule;
 use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Property extends Model
 {
@@ -28,30 +30,32 @@ class Property extends Model
         'condition',
         'remarks',
         'active',
-        'excluded'
+        'excluded',
     ];
 
     protected $casts = [
         'acquisition_date' => 'date:Y-m-d',
     ];
 
-
     /**
      * Relationship: Property belongs to a Location
      */
-    public function location()
+    /** @return BelongsTo<Location, $this> */
+    public function location(): BelongsTo
     {
         return $this->belongsTo(Location::class);
     }
 
-    public function images()
+    /** @return HasMany<PropertyImage, $this> */
+    public function images(): HasMany
     {
         return $this->hasMany(PropertyImage::class);
     }
 
-    public function user()
+    /** @return BelongsTo<User, $this> */
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\User::class, 'user_id');
+        return $this->belongsTo(User::class, 'user_id');
     }
 
     public function activityModule(): ActivityModule

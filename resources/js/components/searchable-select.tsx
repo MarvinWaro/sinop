@@ -1,4 +1,4 @@
-import { Check, ChevronsUpDown, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Plus, Search } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import {
@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils';
 export type SearchableOption = {
     value: string;
     label: string;
+    /** A short code shown right after the label (e.g. a stock no.), in italic blue. */
+    code?: string | null;
     description?: string | null;
     meta?: string | null;
     group?: string | null;
@@ -30,7 +32,19 @@ type Props = {
     className?: string;
     /** Open the list on mount (e.g. a row that was just added). */
     defaultOpen?: boolean;
+    /**
+     * Lets the person add what they typed when nothing matches it exactly:
+     * the last row reads "Add “…”".
+     */
+    onCreate?: (text: string) => void;
+    createLabel?: (text: string) => string;
 };
+
+function OptionCode({ code }: { code?: string | null }) {
+    return code ? (
+        <span className="ml-1.5 text-primary italic">{code}</span>
+    ) : null;
+}
 
 /**
  * Searchable select for long lists (supplies, users). The list floats above
@@ -50,6 +64,8 @@ export function SearchableSelect({
     disabled,
     className,
     defaultOpen = false,
+    onCreate,
+    createLabel = (text) => `Add “${text}”`,
 }: Props) {
     const [open, setOpen] = useState(defaultOpen);
     const [query, setQuery] = useState('');
@@ -60,11 +76,27 @@ export function SearchableSelect({
     const term = query.trim().toLowerCase();
     const filtered = term
         ? options.filter((option) =>
-              `${option.label} ${option.description ?? ''} ${option.meta ?? ''} ${option.group ?? ''}`
+              `${option.label} ${option.code ?? ''} ${option.description ?? ''} ${option.meta ?? ''} ${option.group ?? ''}`
                   .toLowerCase()
                   .includes(term),
           )
         : options;
+    // What can be added: the typed text, unless an option already has it.
+    const createText =
+        onCreate &&
+        term &&
+        !options.some((option) => option.label.trim().toLowerCase() === term)
+            ? query.trim().replace(/\s+/g, ' ')
+            : null;
+    const lastIndex = filtered.length - (createText ? 0 : 1);
+
+    const create = () => {
+        if (createText && onCreate) {
+            onCreate(createText);
+            setOpen(false);
+            setQuery('');
+        }
+    };
 
     const choose = (option: SearchableOption | undefined) => {
         if (!option || option.disabled) {
@@ -79,13 +111,18 @@ export function SearchableSelect({
     const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
         if (event.key === 'ArrowDown') {
             event.preventDefault();
-            setHighlight((index) => Math.min(index + 1, filtered.length - 1));
+            setHighlight((index) => Math.min(index + 1, lastIndex));
         } else if (event.key === 'ArrowUp') {
             event.preventDefault();
             setHighlight((index) => Math.max(index - 1, 0));
         } else if (event.key === 'Enter') {
             event.preventDefault();
-            choose(filtered[highlight]);
+
+            if (createText && highlight === filtered.length) {
+                create();
+            } else {
+                choose(filtered[highlight]);
+            }
         }
         // Escape is handled by the popover: it closes the list only, not the dialog.
     };
@@ -122,7 +159,14 @@ export function SearchableSelect({
                             !selected && 'text-muted-foreground',
                         )}
                     >
-                        {selected ? selected.label : placeholder}
+                        {selected ? (
+                            <>
+                                {selected.label}
+                                <OptionCode code={selected.code} />
+                            </>
+                        ) : (
+                            placeholder
+                        )}
                     </span>
                     <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
                 </button>
@@ -156,7 +200,7 @@ export function SearchableSelect({
                     className="max-h-[min(16rem,calc(var(--radix-popover-content-available-height)-2.5rem))] overflow-y-auto p-1"
                     role="listbox"
                 >
-                    {filtered.length === 0 ? (
+                    {filtered.length === 0 && !createText ? (
                         <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                             {emptyText}
                         </p>
@@ -199,6 +243,9 @@ export function SearchableSelect({
                                         <span className="min-w-0 flex-1">
                                             <span className="block truncate">
                                                 {option.label}
+                                                <OptionCode
+                                                    code={option.code}
+                                                />
                                             </span>
                                             {option.description && (
                                                 <span className="block truncate text-xs text-muted-foreground">
@@ -215,6 +262,26 @@ export function SearchableSelect({
                                 </div>
                             );
                         })
+                    )}
+                    {createText && (
+                        <button
+                            type="button"
+                            role="option"
+                            aria-selected={false}
+                            onMouseEnter={() => setHighlight(filtered.length)}
+                            onClick={create}
+                            className={cn(
+                                'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm',
+                                filtered.length > 0 && 'mt-1 border-t pt-2',
+                                highlight === filtered.length &&
+                                    'bg-accent text-accent-foreground',
+                            )}
+                        >
+                            <Plus className="size-4 shrink-0" />
+                            <span className="truncate">
+                                {createLabel(createText)}
+                            </span>
+                        </button>
                     )}
                 </div>
             </PopoverContent>

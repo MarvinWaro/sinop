@@ -1,4 +1,5 @@
 import { Plus, Star, Trash2 } from 'lucide-react';
+import { guardImage } from '@/components/signature/signature-box';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -53,7 +54,7 @@ export function SignatureLibrary({
                             <img
                                 src={signature.url}
                                 alt={signature.name}
-                                draggable={false}
+                                {...guardImage}
                                 className="max-h-full max-w-full object-contain"
                             />
                         </button>

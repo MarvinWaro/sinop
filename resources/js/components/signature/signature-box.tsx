@@ -1,5 +1,10 @@
 import { useRef, useState } from 'react';
-import type { CSSProperties, ReactNode, SyntheticEvent } from 'react';
+import type {
+    CSSProperties,
+    MouseEvent,
+    ReactNode,
+    SyntheticEvent,
+} from 'react';
 import { boxAspect, frameOf } from '@/lib/signature-placement';
 import { cn } from '@/lib/utils';
 import type { BoxSignature, Placement, SignStep } from '@/types';
@@ -65,6 +70,7 @@ export function SignatureBox({
         <div
             className={cn('relative w-full', className)}
             style={{ aspectRatio: boxAspect(step), ...style }}
+            onContextMenu={(event) => event.preventDefault()}
         >
             {signature &&
                 (signature.placement ? (
@@ -94,6 +100,15 @@ export function SignatureBox({
         </div>
     );
 }
+
+/**
+ * For signature <img>s: no right-click "Save image" and no dragging out. It
+ * only stops casual saving; the real protection is who may load the file.
+ */
+export const guardImage = {
+    draggable: false,
+    onContextMenu: (event: MouseEvent) => event.preventDefault(),
+};
 
 /** Height ÷ width of a loaded image. */
 export function imageRatio(image: HTMLImageElement): number {

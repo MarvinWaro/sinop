@@ -27,8 +27,10 @@ return new class extends Migration
         'roles.view', 'roles.create', 'roles.update', 'roles.delete',
         'activity-logs.view',
         'settings.ris-signatory',
-        // Deleting records that carry money or accountability history.
+        // Deleting records that carry money or accountability history, and
+        // correcting recorded transactions (added 2026-10-31).
         'stocks.delete', 'supplies.delete', 'properties.delete',
+        'transactions.update', 'transactions.delete',
         // Organisation structure (tied to accounts); viewing stays allowed.
         'divisions.create', 'divisions.update', 'divisions.delete',
         'designations.create', 'designations.update', 'designations.delete',

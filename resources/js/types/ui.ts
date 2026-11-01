@@ -9,7 +9,8 @@ export type AppLayoutProps = {
 export type AppVariant = 'header' | 'sidebar';
 
 export type FlashToast = {
-    type: 'success' | 'info' | 'warning' | 'error';
+    /** `updated` and `deleted` are successes shown in blue and red. */
+    type: 'success' | 'updated' | 'deleted' | 'info' | 'warning' | 'error';
     message: string;
 };
 

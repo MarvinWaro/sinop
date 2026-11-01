@@ -375,13 +375,13 @@ class StockCardController extends Controller
 
         $currentRow++;
 
-        $sheet->setCellValue("A{$currentRow}", "Date");
-        $sheet->setCellValue("B{$currentRow}", "Reference");
-        $sheet->setCellValue("C{$currentRow}", "Receipt");
+        $sheet->setCellValue("A{$currentRow}", "DATE");
+        $sheet->setCellValue("B{$currentRow}", "REFERENCE");
+        $sheet->setCellValue("C{$currentRow}", "RECEIPT");
         $sheet->mergeCells("D{$currentRow}:E{$currentRow}");
-        $sheet->setCellValue("D{$currentRow}", "Issue");
-        $sheet->setCellValue("F{$currentRow}", "Balance");
-        $sheet->setCellValue("G{$currentRow}", "No. of Days\nto Consume");
+        $sheet->setCellValue("D{$currentRow}", "ISSUE");
+        $sheet->setCellValue("F{$currentRow}", "BALANCE");
+        $sheet->setCellValue("G{$currentRow}", "NO. OF DAYS\nTO CONSUME");
 
         $headerRange = "A{$currentRow}:G{$currentRow}";
         $sheet->getStyle($headerRange)->applyFromArray([
@@ -405,10 +405,10 @@ class StockCardController extends Controller
         $subHeaders = [
             'A' => "",
             'B' => "",
-            'C' => "Qty.",
-            'D' => "Qty.",
-            'E' => "Office",
-            'F' => "Qty.",
+            'C' => "QTY.",
+            'D' => "QTY.",
+            'E' => "OFFICE",
+            'F' => "QTY.",
             'G' => ""
         ];
 

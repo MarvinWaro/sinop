@@ -24,8 +24,9 @@ test('cao can open the users page', function () {
 });
 
 test('users page search filters by name', function () {
-    $admin = User::factory()->admin()->create(['name' => 'Ada Admin']);
-    User::factory()->create(['name' => 'Sam Staff']);
+    // Fixed emails: a random one could contain "sam" too.
+    $admin = User::factory()->admin()->create(['name' => 'Ada Admin', 'email' => 'ada@example.com']);
+    User::factory()->create(['name' => 'Sam Staff', 'email' => 'staff@example.com']);
 
     $this->actingAs($admin)
         ->get(route('users.index', ['search' => 'Sam']))

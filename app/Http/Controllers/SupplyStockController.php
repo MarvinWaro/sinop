@@ -364,11 +364,17 @@ class SupplyStockController extends Controller
      */
     private function processStockReceipt(array $itemData, string $referenceNo)
     {
-        // 1) Pull or init summary
-        $stock = SupplyStock::firstOrNew([
-            'supply_id' => $itemData['supply_id'],
-            'fund_cluster' => $itemData['fund_cluster'],
-        ]);
+        // 1) Pull or init summary: the item's row for this fund cluster, else
+        // the empty row adding the supply made (no fund cluster yet), so the
+        // first delivery fills it instead of adding a second row beside it.
+        $stock = SupplyStock::where('supply_id', $itemData['supply_id'])
+            ->where('fund_cluster', $itemData['fund_cluster'])
+            ->first()
+            ?? SupplyStock::where('supply_id', $itemData['supply_id'])
+                ->whereNull('fund_cluster')
+                ->where('quantity_on_hand', 0)
+                ->first()
+            ?? new SupplyStock(['supply_id' => $itemData['supply_id']]);
 
         // 2) existing totals
         $oldQty = $stock->exists ? $stock->quantity_on_hand : 0;
@@ -389,6 +395,7 @@ class SupplyStockController extends Controller
 
         // 6) save summary row
         $stock->fill([
+            'fund_cluster' => $itemData['fund_cluster'],
             'quantity_on_hand' => $newTotalQty,
             'unit_cost' => round($newAvgCost, 2),
             'total_cost' => $newTotalCost,

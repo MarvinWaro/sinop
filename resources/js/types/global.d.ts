@@ -18,6 +18,8 @@ declare module '@inertiajs/core' {
             auth: Auth;
             notifications: NotificationCounts | null;
             inbox: Inbox | null;
+            /** Messages the person hasn't read (the Messages badge). */
+            messagesUnread: number;
             broadcasting: BroadcastingConfig | null;
             sidebarOpen: boolean;
             [key: string]: unknown;

@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Location;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 
 class LocationController extends Controller
@@ -28,7 +28,6 @@ class LocationController extends Controller
         ]);
     }
 
-
     public function store(Request $request)
     {
         // Validate input
@@ -44,7 +43,7 @@ class LocationController extends Controller
         if ($existingLocation) {
             return redirect()->back()
                 ->withInput()
-                ->withErrors(['location_name' => 'Location name is already taken.']);
+                ->withErrors(['location_name' => 'This property location is already in the list.']);
         }
 
         // Find the first EXCLUDED location and reuse it
@@ -59,25 +58,24 @@ class LocationController extends Controller
                 'updated_at' => now(),
             ]);
 
-            return redirect()->route('location.index')->with('success', 'Location added successfully.');
+            return redirect()->route('location.index')->with('success', 'Property location added.');
         }
 
         // If no excluded location is found, create a new location
         Location::create([
             'location_name' => $request->location_name,
             'active' => 1,
-            'excluded' => 0
+            'excluded' => 0,
         ]);
 
-        return redirect()->route('location.index')->with('success', 'Location created successfully.');
+        return redirect()->route('location.index')->with('success', 'Property location added.');
     }
-
 
     public function update(Request $request, Location $location)
     {
         // Validate input (no regex, just max length and unique rule)
         $request->validate([
-            'location_name' => 'required|string|max:255|unique:locations,location_name,' . $location->id,
+            'location_name' => 'required|string|max:255|unique:locations,location_name,'.$location->id,
         ]);
 
         // Update location
@@ -85,23 +83,22 @@ class LocationController extends Controller
             'location_name' => $request->location_name,
         ]);
 
-        return redirect()->route('location.index')->with('success', 'Location updated successfully.');
+        return redirect()->route('location.index')->with('success', 'Property location updated.');
     }
 
     public function destroy(Location $location)
     {
         // Check if the location is already excluded
         if ($location->excluded) {
-            return redirect()->route('location.index')->with('error', 'Location is already excluded.');
+            return redirect()->route('location.index')->with('error', 'This property location is already removed.');
         }
 
         // Mark the location as excluded and inactive
         $location->update([
             'excluded' => 1,
-            'active' => 0
+            'active' => 0,
         ]);
 
-        return redirect()->route('location.index')->with('deleted', 'Location has been removed.');
+        return redirect()->route('location.index')->with('deleted', 'Property location removed.');
     }
-
 }

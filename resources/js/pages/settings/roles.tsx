@@ -1,12 +1,24 @@
 import { Head, useForm } from '@inertiajs/react';
-import { KeyRound, Lock, Pencil, Plus, Shield, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import {
+    Grid3x3,
+    KeyRound,
+    List,
+    Lock,
+    Pencil,
+    Plus,
+    Shield,
+    Trash2,
+} from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
 import { FormField } from '@/components/form-field';
 import Heading from '@/components/heading';
 import { SearchForm } from '@/components/search-form';
+import { SearchInput } from '@/components/search-input';
+import { PermissionMatrix } from '@/components/settings/permission-matrix';
+import type { RoleHolders } from '@/components/settings/permission-matrix';
 import { TablePanel } from '@/components/table-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,6 +42,7 @@ import {
 } from '@/components/ui/table';
 import { useCan } from '@/hooks/use-can';
 import { useDeleteAction } from '@/hooks/use-delete-action';
+import { cn } from '@/lib/utils';
 import { destroy, index as rolesIndex, store, update } from '@/routes/roles';
 
 type RoleRow = {
@@ -54,21 +67,54 @@ type Props = {
     permissionGroups: PermissionGroup[];
     totalPermissions: number;
     search: string;
+    people: RoleHolders;
 };
 
+type View = 'matrix' | 'list';
+
+const VIEW_KEY = 'sinop:roles-view';
+
 /**
- * Settings › Roles & permissions (same layout as PHLGADIS). Administrator is
- * locked with every permission; built-in roles can't be deleted.
+ * Settings › Roles & permissions. The matrix ticks permissions against
+ * every role at once; the list shows each role with its description.
+ * Administrator is locked with every permission; built-in roles can't be
+ * deleted.
  */
 export default function RolesIndex({
     roles,
     permissionGroups,
     totalPermissions,
     search,
+    people,
 }: Props) {
     const can = useCan();
     const [editing, setEditing] = useState<RoleRow | 'new' | null>(null);
     const deletion = useDeleteAction<RoleRow>((role) => destroy.url(role.id));
+    // A role search from the list opens the list; otherwise the last view used.
+    const [view, setView] = useState<View>(search ? 'list' : 'matrix');
+    const [filter, setFilter] = useState('');
+
+    useEffect(() => {
+        try {
+            const saved = window.localStorage.getItem(VIEW_KEY);
+
+            if (!search && (saved === 'matrix' || saved === 'list')) {
+                setView(saved);
+            }
+        } catch {
+            // Storage blocked: the matrix it is.
+        }
+    }, [search]);
+
+    const choose = (next: View) => {
+        setView(next);
+
+        try {
+            window.localStorage.setItem(VIEW_KEY, next);
+        } catch {
+            // Remembering the view is a nicety.
+        }
+    };
 
     return (
         <>
@@ -90,129 +136,159 @@ export default function RolesIndex({
                 />
 
                 <div className="space-y-4">
-                    <SearchForm
-                        url={rolesIndex.url()}
-                        defaultValue={search}
-                        placeholder="Search roles"
-                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="min-w-0 flex-1">
+                            {view === 'matrix' ? (
+                                <SearchInput
+                                    placeholder="Filter permissions"
+                                    aria-label="Filter permissions"
+                                    value={filter}
+                                    onValueChange={setFilter}
+                                    className="max-w-sm"
+                                />
+                            ) : (
+                                <SearchForm
+                                    url={rolesIndex.url()}
+                                    defaultValue={search}
+                                    placeholder="Search roles"
+                                />
+                            )}
+                        </div>
+                        <ViewSwitch view={view} onChange={choose} />
+                    </div>
 
-                    <TablePanel>
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Role</TableHead>
-                                    <TableHead>Description</TableHead>
-                                    <TableHead>Users</TableHead>
-                                    <TableHead>Permissions</TableHead>
-                                    <TableHead className="text-right">
-                                        Actions
-                                    </TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {roles.length === 0 ? (
+                    {view === 'matrix' ? (
+                        <PermissionMatrix
+                            roles={roles}
+                            groups={permissionGroups}
+                            people={people}
+                            filter={filter}
+                            canEdit={can('roles.update')}
+                            canDelete={can('roles.delete')}
+                            onEditRole={setEditing}
+                            onDeleteRole={deletion.request}
+                        />
+                    ) : (
+                        <TablePanel>
+                            <Table>
+                                <TableHeader>
                                     <TableRow>
-                                        <TableCell colSpan={5}>
-                                            <EmptyState
-                                                icon={KeyRound}
-                                                title="No roles found"
-                                            />
-                                        </TableCell>
+                                        <TableHead>Role</TableHead>
+                                        <TableHead>Description</TableHead>
+                                        <TableHead>Users</TableHead>
+                                        <TableHead>Permissions</TableHead>
+                                        <TableHead className="text-right">
+                                            Actions
+                                        </TableHead>
                                     </TableRow>
-                                ) : (
-                                    roles.map((role) => (
-                                        <TableRow key={role.id}>
-                                            <TableCell>
-                                                <span className="flex items-center gap-2 font-medium">
-                                                    {role.is_super_admin ? (
-                                                        <Lock
-                                                            className="size-4 text-muted-foreground"
-                                                            aria-hidden
-                                                        />
-                                                    ) : (
-                                                        <Shield
-                                                            className="size-4 text-muted-foreground"
-                                                            aria-hidden
-                                                        />
-                                                    )}
-                                                    {role.name}
-                                                </span>
+                                </TableHeader>
+                                <TableBody>
+                                    {roles.length === 0 ? (
+                                        <TableRow>
+                                            <TableCell colSpan={5}>
+                                                <EmptyState
+                                                    icon={KeyRound}
+                                                    title="No roles found"
+                                                />
                                             </TableCell>
-                                            <TableCell className="max-w-md whitespace-normal text-muted-foreground">
-                                                {role.description ?? '—'}
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    variant="secondary"
-                                                    className="tabular-nums"
-                                                >
-                                                    {role.users_count}{' '}
-                                                    {role.users_count === 1
-                                                        ? 'user'
-                                                        : 'users'}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell>
-                                                <Badge
-                                                    variant="outline"
-                                                    className="tabular-nums"
-                                                >
-                                                    {role.is_super_admin
-                                                        ? 'All permissions'
-                                                        : `${role.permissions_count} of ${totalPermissions}`}
-                                                </Badge>
-                                            </TableCell>
-                                            <TableCell className="text-right">
-                                                {role.is_super_admin ? (
-                                                    <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                                                        <Lock
-                                                            className="size-3.5"
-                                                            aria-hidden
-                                                        />
-                                                        System locked
-                                                    </span>
-                                                ) : (
-                                                    <div className="flex justify-end gap-1">
-                                                        {can(
-                                                            'roles.update',
-                                                        ) && (
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="icon"
-                                                                onClick={() =>
-                                                                    setEditing(
-                                                                        role,
-                                                                    )
-                                                                }
-                                                                aria-label={`Edit ${role.name}`}
-                                                            >
-                                                                <Pencil />
-                                                            </Button>
+                                        </TableRow>
+                                    ) : (
+                                        roles.map((role) => (
+                                            <TableRow key={role.id}>
+                                                <TableCell>
+                                                    <span className="flex items-center gap-2 font-medium">
+                                                        {role.is_super_admin ? (
+                                                            <Lock
+                                                                className="size-4 text-muted-foreground"
+                                                                aria-hidden
+                                                            />
+                                                        ) : (
+                                                            <Shield
+                                                                className="size-4 text-muted-foreground"
+                                                                aria-hidden
+                                                            />
                                                         )}
-                                                        {can('roles.delete') &&
-                                                            !role.is_built_in && (
+                                                        {role.name}
+                                                    </span>
+                                                </TableCell>
+                                                <TableCell className="max-w-md whitespace-normal text-muted-foreground">
+                                                    {role.description ?? '—'}
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="tabular-nums"
+                                                    >
+                                                        {role.users_count}{' '}
+                                                        {role.users_count === 1
+                                                            ? 'user'
+                                                            : 'users'}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell>
+                                                    <Badge
+                                                        variant="outline"
+                                                        className="tabular-nums"
+                                                    >
+                                                        {role.is_super_admin
+                                                            ? 'All permissions'
+                                                            : `${role.permissions_count} of ${totalPermissions}`}
+                                                    </Badge>
+                                                </TableCell>
+                                                <TableCell className="text-right">
+                                                    {role.is_super_admin ? (
+                                                        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                                            <Lock
+                                                                className="size-3.5"
+                                                                aria-hidden
+                                                            />
+                                                            System locked
+                                                        </span>
+                                                    ) : (
+                                                        <div className="flex justify-end gap-1">
+                                                            {can(
+                                                                'roles.update',
+                                                            ) && (
                                                                 <Button
                                                                     variant="ghost"
                                                                     size="icon"
                                                                     onClick={() =>
-                                                                        deletion.request(
+                                                                        setEditing(
                                                                             role,
                                                                         )
                                                                     }
-                                                                    aria-label={`Delete ${role.name}`}
+                                                                    aria-label={`Edit ${role.name}`}
                                                                 >
-                                                                    <Trash2 />
+                                                                    <Pencil />
                                                                 </Button>
                                                             )}
-                                                    </div>
-                                                )}
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                )}
-                            </TableBody>
-                        </Table>
-                    </TablePanel>
+                                                            {can(
+                                                                'roles.delete',
+                                                            ) &&
+                                                                !role.is_built_in && (
+                                                                    <Button
+                                                                        variant="ghost"
+                                                                        size="icon"
+                                                                        onClick={() =>
+                                                                            deletion.request(
+                                                                                role,
+                                                                            )
+                                                                        }
+                                                                        aria-label={`Delete ${role.name}`}
+                                                                    >
+                                                                        <Trash2 />
+                                                                    </Button>
+                                                                )}
+                                                        </div>
+                                                    )}
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TablePanel>
+                    )}
                 </div>
             </div>
 
@@ -443,5 +519,46 @@ function RoleForm({
                 </Button>
             </DialogFooter>
         </form>
+    );
+}
+
+/** Matrix or list, as a two-button switch. */
+function ViewSwitch({
+    view,
+    onChange,
+}: {
+    view: View;
+    onChange: (view: View) => void;
+}) {
+    const options: { value: View; label: string; icon: typeof List }[] = [
+        { value: 'matrix', label: 'Matrix', icon: Grid3x3 },
+        { value: 'list', label: 'List', icon: List },
+    ];
+
+    return (
+        <div
+            role="radiogroup"
+            aria-label="View"
+            className="inline-flex rounded-lg border bg-muted/40 p-0.5"
+        >
+            {options.map(({ value, label, icon: Icon }) => (
+                <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={view === value}
+                    onClick={() => onChange(value)}
+                    className={cn(
+                        'inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                        view === value
+                            ? 'bg-background font-medium shadow-xs'
+                            : 'text-muted-foreground hover:text-foreground',
+                    )}
+                >
+                    <Icon className="size-4" />
+                    {label}
+                </button>
+            ))}
+        </div>
     );
 }

@@ -60,6 +60,7 @@
         .ledger-table th {
             background-color: #ffffff;
             font-weight: normal;
+            text-transform: uppercase;
         }
         .ledger-header {
             height: 30px;

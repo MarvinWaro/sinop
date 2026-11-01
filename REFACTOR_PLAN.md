@@ -159,6 +159,7 @@ data before any change, and handled inside the module that owns the table.
 | D23 | Signed RIS forms change             | Signatory names, designations and signatures are looked up live, so editing a person rewrites past forms. `ris_slips.office` is a half-snapshot. | `ris_slip_signatories` snapshot at signing (with D9, D10). E-signatures are frozen since 2026-10-30 (`ris_slip_signatures`); names and designations are still live. | 6      |
 | D24 | Reused rows / caches                | Adding a location or property overwrites a removed one (its ID, history, QR). Property QR images are cached and keep old names. | Stop the reuse; regenerate the QR on change.                                                               | 2, 9   |
 | D25 | Dropped values                      | `storeManual` sends `cao_name`, `cao_designation`, `created_at`, `updated_at`; none are fillable, so they are silently lost. The RIS "Requested" date shows the typing date, not the RIS date. | Decide what to keep; write it explicitly.                                                                 | 6      |
+| D26 | Duplicate empty stock row           | Adding a supply makes an empty `supply_stocks` row with no fund cluster; the first IAR added a second row for its fund cluster instead of filling it, so Stocks listed the item twice ("Depleted, 0" plus the real one): 18 items in the Oct 28 export. | Fixed 2026-10-31: a receipt fills that empty row (`SupplyStockController::processStockReceipt`); migration `2026_10_31_000007` removes the empty duplicates. | 5      |
 
 Baseline from `php artisan sinop:audit-data` on the Oct 28 export:
 - 0 accounts without a role; 0 orphan rows; 0 supplies whose on-hand differs from receipts − issues.
@@ -421,7 +422,29 @@ _Not started._
 
 ### 5 · Transactions & ledger
 
-_Not started._
+_Not started as a module._ One piece landed ahead of it:
+
+**Correcting recorded transactions (2026-10-31).** Admins fix typing mistakes on the Transactions page instead of in phpMyAdmin.
+
+- **Who:** new permissions `transactions.update` and `transactions.delete` (migration `2026_10_31_000006`), given to no role. The Administrator has them as super admin; they can be given to others in Roles & permissions. The Supply and Procurement Officer migration lists them as admin-only, so re-running it doesn't hand them out.
+- **What can be changed:**
+  - A receipt (IAR) line: date, IAR no. (same format; an IAR lists an item once), quantity, unit cost, remarks.
+  - An issue (RIS) line: date, quantity, division, remarks. Its reference is the RIS number, and its cost is re-derived by the ledger card and RSMI anyway.
+  - Item and fund cluster can't be changed (delete the line and record it again). Re-value (adjustment) lines can't be corrected here.
+  - A whole IAR can be renumbered ("Change IAR no." on the document). It is refused, naming the items, when the new number already has one of them.
+- **Every change needs a reason.** One activity-log entry each, with before → after, the stock on hand before → after, and the RIS issued quantity before → after.
+- **What follows:**
+  - Read-time figures (stock card, ledger card, RSMI, RPCI past dates, dashboard charts) follow by themselves.
+  - Stored copies are updated in the same database transaction (`App\Services\StockLedger`), under the same `supply_stocks` row lock RIS requests take:
+    - each later line's `balance_quantity`;
+    - the stock row's `quantity_on_hand` and `status`, and its `unit_cost` and `total_cost`, from the ledger's weighted average (the ledger card's figures). The row is the line's fund cluster, else the RIS's, else issuing's FIFO order;
+    - an RIS line's `ris_items.quantity_issued`, set to the sum of that RIS's lines for the item. If several slips share the RIS number and the item (D18), the change is refused.
+- **Below zero is refused**, naming the line: "RIS 2026-10-005 on Oct 20, 2026 would leave -3 in stock". Only new or deeper dips count, so an old back-dated dip doesn't block an unrelated fix.
+- **Code:** `App\Actions\Transactions\{CorrectTransaction, DeleteTransaction, RenumberIar}`, Form Requests in `App\Http\Requests\Transactions`, `SupplyTransactionController@update|destroy|renumber`, `components/transactions/transaction-corrections.tsx`.
+- **Not done (module 5):**
+  - Only the corrected item's stock row is re-priced; D19 (`total_cost` never lowered on issue) and D20 (issue lines without a fund cluster) remain for the others.
+  - The RIS status and issued date are not changed by a correction.
+- **Tests:** `tests/Feature/TransactionCorrectionTest.php`. There is also a real-mouse walk on a throwaway SQLite: correct a receipt, the delete refused, delete an issue, renumber an IAR, and the CAO sees no buttons.
 
 ### 6 · RIS
 
@@ -526,7 +549,33 @@ _Not started._
 
 ### 9 · Property (PPE)
 
-_Not started._
+**Property form, sticker and scan page (2026-10-30).**
+
+- **Type to add:**
+  - **Location:** a location that isn't listed can be typed in the form; it is saved to `locations` (an active one with the same name, in any case, is reused; removed rows are not reused). Only people with `locations.create` can type a new one.
+  - **Condition:** conditions have their own list, `property_conditions` (seeded with Serviceable and Unserviceable plus any condition already used). A typed one is added; a different case of a listed one takes the listed spelling. `properties.condition` still holds the name (D3).
+  - Both use `SearchableSelect`'s new `onCreate` ("Add “…”" as the last row).
+- **Property number:** saved in capitals, both in the browser and on the server.
+- **Layout:** photos and the sticker take 4/12; the details take 8/12.
+- **Sticker** (`components/properties/property-sticker.tsx`):
+  - 3 × 2 in: CHED header, item name, property no., S/N, and a QR.
+  - Print at actual size, or save as a 300 dpi PNG. One SVG serves the preview, print and PNG.
+  - The QR is drawn in the browser (`qrcode`, loaded only on property pages).
+- **The QR holds a link, not text:** `/p/{property number}` (`property.scan`).
+  - This fixes the stale-QR half of D24: editing never makes a printed sticker wrong (renumbering does; reprint then).
+  - The PDF sticker (`property.download-qr`) uses the same link, under a new cache name.
+- **Public scan page** (`PropertyScanController`, `pages/public/property.tsx`):
+  - Opens without login and shows the item, property no., serial and model, condition, location and the accountable person.
+  - Signed-in users also see cost, fund, quantity, description, remarks and photos; users with `properties.view` get "Open in SINOP".
+  - "Sign in" goes through `/p/{number}/sign-in` (behind auth), so login comes back to the page.
+  - Removed or unknown numbers return 404. The route is rate-limited at 60 per minute.
+- **Settings › Property conditions** (`PropertyConditionController`, `settings/property-conditions.tsx`):
+  - Add, rename and delete conditions. A rename is applied to the properties that use it; a condition still in use can't be deleted.
+  - Serviceable and Unserviceable are built in (the assets overview counts them).
+  - New permissions `property-conditions.*`, given to every role that had the matching `locations.*` permission.
+  - Typing a new condition in the property form needs `property-conditions.create`, as a new location needs `locations.create`.
+- **"Locations" is now "Property locations" everywhere people read it:** the settings menu and page, the property form, the permission names and the activity-log module. The URLs and permission slugs are unchanged.
+- **Tests:** `PropertyFormTest`, `PropertyScanTest`, `PropertyConditionSettingsTest`. There is also a real-mouse walk: type a new condition and location, type the number in lower case, save the PNG, open the scan page signed in and signed out.
 
 ### 10 · Dashboards
 
@@ -595,16 +644,42 @@ _Not started._
   - Office is filled from the division: the part after " - " ("Scholarship Division - UniFAST BARMM" → "UniFAST BARMM"), or the whole name when there is no dash.
   - It stays editable. Typed text is kept when the division changes; a cleared Office follows the division again.
 
-**Messages preview (2026-10-30), static, sample data.** The planned chat between requesters and the supply office, shown so the layout can be judged before it is built.
+**Messages (2026-10-31), live over Soketi.** Conversations between a requester and the supply office, which answers as a shared inbox. Replaces the static preview.
 
-- **Where:** `/messages` (`Route::inertia`, every signed-in user), a Messages item in Overview, and a message icon beside the bell.
-- **Layout:** three panes. Conversations (All / Requests / Concerns, search), the thread, and what it is about (the RIS and its items, or the concern), plus the people.
-  - The thread shows the request's own events (submitted, approved, issued), attachments, a typing indicator and quick replies.
-  - The office side sees the shared inbox ("Needs reply"); staff see their own threads ("Awaiting reply").
-- **Preview limits:**
-  - The data is in `components/messages/sample-conversations.ts`; nothing is saved, and actions show a "Preview only" toast.
-  - It is labelled "Preview" on the page.
-  - The real module will reuse `components/messages/message-parts.tsx`.
+- **Who:**
+  - The new permission `messages.office` ("Answer messages for the supply office") is given to the roles that have `ris.issue` or `ris.approve` (Admin, CAO, Supply officer).
+  - People with it see every conversation and answer for the office. Admins in user mode count as requesters.
+  - Everyone else sees only their own conversations (`Conversation::scopeVisibleTo`, `ConversationPolicy`).
+- **Starting:**
+  - Either side can start a conversation, with its first message: about a request (an RIS), a concern (optionally one of the requester's properties), or something else.
+  - The office first picks the person.
+  - An RIS has one conversation per requester; asking again adds to it.
+  - The RIS page has a "Message supply office" / "Message requester" button (`/messages?ris=<key>`).
+- **Status:**
+  - A requester's message makes the conversation "waiting" (Needs reply).
+  - An office reply makes it "open".
+  - Either side can mark it resolved or reopen it. This leaves a line in the thread (`messages.side = system`).
+- **Unread:** the other side's messages after the last one each person has read (`conversation_reads`). This drives the Messages badge in the header and sidebar (shared prop `messagesUnread`). New messages don't go to the bell.
+- **Attachments:**
+  - Photos, PDFs and spreadsheets, up to 4 files of 10 MB each.
+  - They are stored in `message-attachments/` on the uploads disk.
+  - They are served by `MessageController::attachment` only to the people in the conversation, never through `/files`.
+- **Thread extras:**
+  - The RIS's own history (requested, approved, declined, issued, received) is read from `activity_logs` and shown as lines in the thread.
+  - The context pane shows the RIS items, or the property.
+- **Live:**
+  - `LiveUpdates::messages()` sends `messages` (`{conversation}`) after the response to the requester and the office, minus the sender.
+  - `LiveUpdates::typing()` sends `typing` at once, throttled to one every 3 s per person.
+  - Both go on the user's private channel.
+  - `useInboxUpdates` turns them into window events for the page.
+  - Without Soketi, the page catches up with the regular 60 s checks.
+- **Code:**
+  - Server: `App\Services\Messenger` (the rules), `MessageController` (the page and its JSON).
+  - Browser: `components/messages/use-messages.ts`, `message-parts.tsx`, `new-conversation-dialog.tsx`.
+  - Tests: `tests/Feature/MessagesTest.php`.
+- **Not done:**
+  - Starting and resolving conversations are not in the activity log. Messages are not an audited module.
+  - Messages can't be edited or deleted.
 
 ### 12 · Hardening & release
 
@@ -643,3 +718,5 @@ _Not started._
 | 2026-10-30 | Uploads on Berth's S3 bucket, private, served through the app at `/files`       | Survives redeploys; access stays with the app   |
 | 2026-10-30 | RIS Print removed for now; Excel export is the form                              | Marvin: not needed                              |
 | 2026-10-30 | Signers place e-signatures in their own box only; signed RIS keep a frozen copy | Form stays valid; past forms never change (D23) |
+| 2026-10-31 | Admins correct transactions in the app (with a reason), never in the database | Stored copies (stock, balances, RIS) stay in step; every fix is logged |
+| 2026-10-31 | E-signatures load only for their owner or the RIS's viewers, are never cached, and the copy on an RIS is stamped with its number and date | A screen can always be captured; a stamped copy is no use on another document |

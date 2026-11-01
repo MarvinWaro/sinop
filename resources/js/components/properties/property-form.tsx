@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { FormField } from '@/components/form-field';
 import { FormSelect } from '@/components/form-select';
+import { PropertyStickerCard } from '@/components/properties/property-sticker';
 import { SearchableSelect } from '@/components/searchable-select';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,12 +24,20 @@ import type { Location, Property, UserOption } from '@/types';
 const MAX_IMAGES = 4;
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const FUNDS = ['Fund 101', 'Fund 151'];
-const CONDITIONS = ['Serviceable', 'Unserviceable'];
+
+/** The select's value for a location typed in the form (saved with it). */
+const NEW_LOCATION = '__new__';
 
 type Props = {
     property?: Property | null;
     locations: Location[];
     users: UserOption[];
+    /** Listed conditions; an admin can type a new one. */
+    conditions: string[];
+    /** Whether this person may add a location by typing it. */
+    canAddLocations: boolean;
+    /** Whether this person may add a condition by typing it. */
+    canAddConditions: boolean;
 };
 
 type PropertyFormData = {
@@ -43,6 +52,8 @@ type PropertyFormData = {
     quantity_per_physical_count: string;
     fund: string;
     location_id: string;
+    /** A new location typed in the form, added when it's saved. */
+    location_name: string;
     user_id: string;
     condition: string;
     remarks: string;
@@ -61,7 +72,14 @@ function formatCost(value: string | null | undefined): string {
 }
 
 /** Create / edit form for a property (multipart, max 4 images). */
-export function PropertyForm({ property = null, locations, users }: Props) {
+export function PropertyForm({
+    property = null,
+    locations,
+    users,
+    conditions,
+    canAddLocations,
+    canAddConditions,
+}: Props) {
     const editing = property !== null;
     const form = useForm<PropertyFormData>({
         property_number: property?.property_number ?? '',
@@ -77,6 +95,7 @@ export function PropertyForm({ property = null, locations, users }: Props) {
         ),
         fund: property?.fund ?? '',
         location_id: property?.location_id ? String(property.location_id) : '',
+        location_name: '',
         user_id: property?.user_id ? String(property.user_id) : '',
         condition: property?.condition ?? '',
         remarks: property?.remarks ?? '',
@@ -166,15 +185,67 @@ export function PropertyForm({ property = null, locations, users }: Props) {
         form.data.fund && !FUNDS.includes(form.data.fund)
             ? [form.data.fund, ...FUNDS]
             : FUNDS;
-    const conditionOptions =
-        form.data.condition && !CONDITIONS.includes(form.data.condition)
-            ? [form.data.condition, ...CONDITIONS]
-            : CONDITIONS;
+    // A condition typed in the form shows as an option until it's saved.
+    const conditionIsNew =
+        form.data.condition !== '' &&
+        !conditions.some(
+            (condition) =>
+                condition.toLowerCase() === form.data.condition.toLowerCase(),
+        );
+    const conditionOptions = [
+        ...conditions.map((condition) => ({
+            value: condition,
+            label: condition,
+        })),
+        ...(conditionIsNew
+            ? [
+                  {
+                      value: form.data.condition,
+                      label: form.data.condition,
+                      description: 'New condition, added when you save',
+                  },
+              ]
+            : []),
+    ];
 
-    const locationOptions = locations.map((location) => ({
-        value: String(location.id),
-        label: location.location_name,
-    }));
+    const locationOptions = [
+        ...locations.map((location) => ({
+            value: String(location.id),
+            label: location.location_name,
+        })),
+        ...(form.data.location_name
+            ? [
+                  {
+                      value: NEW_LOCATION,
+                      label: form.data.location_name,
+                      description: 'New property location, added when you save',
+                  },
+              ]
+            : []),
+    ];
+
+    /** Picks a typed location: an existing one (any case), or a new one. */
+    const createLocation = (name: string) => {
+        const existing = locations.find(
+            (location) =>
+                location.location_name.toLowerCase() === name.toLowerCase(),
+        );
+
+        form.setData((data) => ({
+            ...data,
+            location_id: existing ? String(existing.id) : '',
+            location_name: existing ? '' : name,
+        }));
+    };
+
+    /** A typed condition takes the listed spelling when it's already there. */
+    const createCondition = (name: string) =>
+        form.setData(
+            'condition',
+            conditions.find(
+                (condition) => condition.toLowerCase() === name.toLowerCase(),
+            ) ?? name.charAt(0).toUpperCase() + name.slice(1),
+        );
     const userOptions = [...users]
         .sort((a, b) => Number(b.status) - Number(a.status))
         .map((user) => ({
@@ -193,97 +264,112 @@ export function PropertyForm({ property = null, locations, users }: Props) {
     const hasImages = previews.length > 0 || existingImages.length > 0;
 
     return (
-        <form
-            onSubmit={submit}
-            className="grid gap-6 lg:grid-cols-[minmax(0,20rem)_1fr]"
-        >
-            <Card className="h-fit">
-                <CardHeader>
-                    <CardTitle>Photos</CardTitle>
-                    <CardDescription>
-                        Up to {MAX_IMAGES} pictures, PNG or JPG, 25 MB each.
-                    </CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-3">
-                    <label
-                        htmlFor="images"
-                        className={cn(
-                            'flex min-h-48 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground transition-colors hover:bg-muted/50',
-                            hasImages && 'p-2',
-                        )}
-                    >
-                        {hasImages ? (
-                            <div
-                                className={cn(
-                                    'grid w-full gap-2',
-                                    (previews.length || existingImages.length) >
-                                        1 && 'grid-cols-2',
-                                )}
-                            >
-                                {(previews.length > 0
-                                    ? previews
-                                    : existingImages.map((image) => image.url)
-                                ).map((src) => (
-                                    <img
-                                        key={src}
-                                        src={src}
-                                        alt=""
-                                        className="aspect-square w-full rounded-md object-cover"
-                                    />
-                                ))}
-                            </div>
-                        ) : (
-                            <>
-                                <ImagePlus className="size-8" />
-                                <span className="font-medium text-foreground">
-                                    Click to upload
-                                </span>
-                                <span>
-                                    You can upload a maximum of {MAX_IMAGES}{' '}
-                                    pictures
-                                </span>
-                            </>
-                        )}
-                        <input
-                            ref={fileInput}
-                            id="images"
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            className="sr-only"
-                            onChange={onFilesChosen}
-                        />
-                    </label>
-                    {previews.length > 0 && existingImages.length > 0 && (
-                        <p className="text-xs text-muted-foreground">
-                            New photos are added to the existing ones.
-                        </p>
-                    )}
-                    {editing && form.data.remove_existing_images === '1' && (
-                        <p className="text-xs text-muted-foreground">
-                            Existing photos will be removed when you save.
-                        </p>
-                    )}
-                    {(imageError || imageErrors.length > 0) && (
-                        <p className="text-sm text-destructive">
-                            {imageError ?? imageErrors[0]}
-                        </p>
-                    )}
-                    {hasImages && (
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={clearImages}
+        <form onSubmit={submit} className="grid gap-6 lg:grid-cols-12">
+            <div className="grid content-start gap-6 lg:col-span-4">
+                <Card className="h-fit">
+                    <CardHeader>
+                        <CardTitle>Photos</CardTitle>
+                        <CardDescription>
+                            Up to {MAX_IMAGES} pictures, PNG or JPG, 25 MB each.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-3">
+                        <label
+                            htmlFor="images"
+                            className={cn(
+                                'flex min-h-48 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground transition-colors hover:bg-muted/50',
+                                hasImages && 'p-2',
+                            )}
                         >
-                            <X />
-                            Remove images
-                        </Button>
-                    )}
-                </CardContent>
-            </Card>
+                            {hasImages ? (
+                                <div
+                                    className={cn(
+                                        'grid w-full gap-2',
+                                        (previews.length ||
+                                            existingImages.length) > 1 &&
+                                            'grid-cols-2',
+                                    )}
+                                >
+                                    {(previews.length > 0
+                                        ? previews
+                                        : existingImages.map(
+                                              (image) => image.url,
+                                          )
+                                    ).map((src) => (
+                                        <img
+                                            key={src}
+                                            src={src}
+                                            alt=""
+                                            className="aspect-square w-full rounded-md object-cover"
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <>
+                                    <ImagePlus className="size-8" />
+                                    <span className="font-medium text-foreground">
+                                        Click to upload
+                                    </span>
+                                    <span>
+                                        You can upload a maximum of {MAX_IMAGES}{' '}
+                                        pictures
+                                    </span>
+                                </>
+                            )}
+                            <input
+                                ref={fileInput}
+                                id="images"
+                                type="file"
+                                accept="image/*"
+                                multiple
+                                className="sr-only"
+                                onChange={onFilesChosen}
+                            />
+                        </label>
+                        {previews.length > 0 && existingImages.length > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                                New photos are added to the existing ones.
+                            </p>
+                        )}
+                        {editing &&
+                            form.data.remove_existing_images === '1' && (
+                                <p className="text-xs text-muted-foreground">
+                                    Existing photos will be removed when you
+                                    save.
+                                </p>
+                            )}
+                        {(imageError || imageErrors.length > 0) && (
+                            <p className="text-sm text-destructive">
+                                {imageError ?? imageErrors[0]}
+                            </p>
+                        )}
+                        {hasImages && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={clearImages}
+                            >
+                                <X />
+                                Remove images
+                            </Button>
+                        )}
+                    </CardContent>
+                </Card>
 
-            <Card>
+                <PropertyStickerCard
+                    itemName={form.data.item_name}
+                    propertyNumber={form.data.property_number}
+                    serialNo={form.data.serial_no}
+                    note={
+                        editing
+                            ? 'Changing the property number changes the QR: print a new sticker.'
+                            : 'The QR opens this property once it is saved.'
+                    }
+                />
+            </div>
+
+            <Card className="lg:col-span-8">
                 <CardHeader>
                     <CardTitle>Property details</CardTitle>
                     <CardDescription>
@@ -317,8 +403,13 @@ export function PropertyForm({ property = null, locations, users }: Props) {
                             id="property_number"
                             value={form.data.property_number}
                             onChange={(e) =>
-                                form.setData('property_number', e.target.value)
+                                form.setData(
+                                    'property_number',
+                                    e.target.value.toUpperCase(),
+                                )
                             }
+                            autoCapitalize="characters"
+                            spellCheck={false}
                             placeholder="Enter property number"
                             required
                         />
@@ -450,37 +541,78 @@ export function PropertyForm({ property = null, locations, users }: Props) {
                         error={form.errors.condition}
                         required
                     >
-                        <FormSelect
+                        <SearchableSelect
                             id="condition"
+                            options={conditionOptions}
                             value={form.data.condition}
-                            onValueChange={(value) =>
+                            onChange={(value) =>
                                 form.setData('condition', value)
                             }
-                            required
-                            placeholder="Select condition"
-                            options={conditionOptions.map((condition) => ({
-                                value: condition,
-                                label: condition,
-                            }))}
+                            onCreate={
+                                canAddConditions ? createCondition : undefined
+                            }
+                            createLabel={(text) =>
+                                `Add “${text}” as a condition`
+                            }
+                            placeholder={
+                                canAddConditions
+                                    ? 'Select or type a condition'
+                                    : 'Select a condition'
+                            }
+                            searchPlaceholder={
+                                canAddConditions
+                                    ? 'Search or type a condition...'
+                                    : 'Search conditions...'
+                            }
+                            emptyText="No conditions found."
+                            invalid={Boolean(form.errors.condition)}
                         />
                     </FormField>
                     <FormField
-                        label="Location / whereabouts"
+                        label="Property location"
                         htmlFor="location_id"
-                        error={form.errors.location_id}
+                        error={
+                            form.errors.location_id ?? form.errors.location_name
+                        }
                         required
                     >
                         <SearchableSelect
                             id="location_id"
                             options={locationOptions}
-                            value={form.data.location_id}
-                            onChange={(value) =>
-                                form.setData('location_id', value)
+                            value={
+                                form.data.location_name
+                                    ? NEW_LOCATION
+                                    : form.data.location_id
                             }
-                            placeholder="Select location"
-                            searchPlaceholder="Search locations..."
-                            emptyText="No locations found."
-                            invalid={Boolean(form.errors.location_id)}
+                            onChange={(value) =>
+                                value !== NEW_LOCATION &&
+                                form.setData((data) => ({
+                                    ...data,
+                                    location_id: value,
+                                    location_name: '',
+                                }))
+                            }
+                            onCreate={
+                                canAddLocations ? createLocation : undefined
+                            }
+                            createLabel={(text) =>
+                                `Add “${text}” as a property location`
+                            }
+                            placeholder={
+                                canAddLocations
+                                    ? 'Select or type a property location'
+                                    : 'Select a property location'
+                            }
+                            searchPlaceholder={
+                                canAddLocations
+                                    ? 'Search or type a property location...'
+                                    : 'Search property locations...'
+                            }
+                            emptyText="No property locations found."
+                            invalid={Boolean(
+                                form.errors.location_id ||
+                                form.errors.location_name,
+                            )}
                         />
                     </FormField>
                     <FormField

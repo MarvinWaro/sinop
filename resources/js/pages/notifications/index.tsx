@@ -1,7 +1,7 @@
 import { Head, InfiniteScroll, router, usePage } from '@inertiajs/react';
 import { BellOff, CheckCheck, SearchX } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/lib/toast';
 import { EmptyState } from '@/components/empty-state';
 import { FormSelect } from '@/components/form-select';
 import {
@@ -215,7 +215,7 @@ export default function Notifications({
                             <button
                                 type="button"
                                 onClick={showNew}
-                                className="sticky top-2 z-10 mx-auto my-2 flex rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-md"
+                                className="sticky top-20 z-10 mx-auto my-2 flex rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-md"
                             >
                                 New notifications · Show
                             </button>

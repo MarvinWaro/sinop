@@ -5,8 +5,11 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\DesignationController;
 use App\Http\Controllers\LocationController;
+use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PropertyConditionController;
 use App\Http\Controllers\PropertyController;
+use App\Http\Controllers\PropertyScanController;
 use App\Http\Controllers\ReportPhysicalCountController;
 use App\Http\Controllers\ReportSuppliesMaterialsIssuedController;
 use App\Http\Controllers\RisSlipController;
@@ -38,10 +41,38 @@ Route::inertia('/', 'welcome')->name('home');
 | index page, so only their index/store/update/destroy routes remain.
 |
 */
-Route::middleware(['auth', 'verified'])->group(function () {
-    // Messages: a preview with sample data until the feature is built.
-    Route::inertia('/messages', 'messages/index')->name('messages.index');
+// What a property sticker's QR opens: public basics, full details when
+// signed in. Rate-limited so property numbers can't be run through quickly.
+// Listed first: the scan route's number may contain slashes.
+Route::get('/p/{propertyNumber}/sign-in', [PropertyScanController::class, 'signIn'])
+    ->where('propertyNumber', '.+')
+    ->middleware('auth')
+    ->name('property.scan.sign-in');
+Route::get('/p/{propertyNumber}', [PropertyScanController::class, 'show'])
+    ->where('propertyNumber', '.+')
+    ->middleware('throttle:60,1')
+    ->name('property.scan');
 
+Route::middleware(['auth', 'verified'])->group(function () {
+    // Messages between requesters and the supply office: the page, and the
+    // JSON it works through. The controller and the policy keep each
+    // conversation to its requester and the office.
+    Route::get('/messages', [MessageController::class, 'index'])->name('messages.index');
+    Route::prefix('messages')->name('messages.')->controller(MessageController::class)
+        ->withoutMiddleware(HandleInertiaRequests::class)
+        ->group(function () {
+            Route::get('/conversations', 'conversations')->middleware('throttle:120,1')->name('conversations');
+            Route::post('/conversations', 'start')->middleware('throttle:20,1')->name('start');
+            Route::get('/options', 'options')->name('options');
+            Route::get('/attachments/{attachment}', 'attachment')->name('attachment');
+            Route::middleware('can:view,conversation')->group(function () {
+                Route::get('/conversations/{conversation}', 'show')->middleware('throttle:120,1')->name('show');
+                Route::post('/conversations/{conversation}/messages', 'send')->middleware('throttle:30,1')->name('send');
+                Route::post('/conversations/{conversation}/read', 'read')->name('read');
+                Route::post('/conversations/{conversation}/typing', 'typing')->middleware('throttle:60,1')->name('typing');
+                Route::patch('/conversations/{conversation}/status', 'status')->name('status');
+            });
+        });
 
     // Notifications: the page, and the JSON the header bell uses. Every
     // signed-in person has their own; the controller keeps them private.
@@ -72,6 +103,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/ris/{risSlip}/export-excel', [RisSlipController::class, 'exportExcel'])->name('ris.export-excel')->middleware('can:view,risSlip');
     // The form as it will print, for the signing preview (JSON).
     Route::get('/ris/{risSlip}/document', [RisSlipController::class, 'document'])->name('ris.document')->middleware('can:view,risSlip')->withoutMiddleware(HandleInertiaRequests::class);
+    Route::get('/ris/{risSlip}/signatures/{step}', [UploadController::class, 'risSignature'])->whereIn('step', ['requested', 'approved', 'issued', 'received'])->name('ris.signature')->middleware('can:view,risSlip')->withoutMiddleware(HandleInertiaRequests::class);
     Route::post('/ris/{risSlip}/receive', [RisSlipController::class, 'receive'])->name('ris.receive');
 
     // Stock cards
@@ -169,6 +201,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
             // Supply transactions
             Route::get('supply-transactions', [SupplyTransactionController::class, 'index'])->name('supply-transactions.index')->middleware('can:transactions.view');
             Route::post('supply-transactions', [SupplyTransactionController::class, 'store'])->name('supply-transactions.store')->middleware('can:transactions.create');
+            // Corrections by admins (a reason is required; the stock follows).
+            Route::put('supply-transactions/iar-number', [SupplyTransactionController::class, 'renumber'])->name('supply-transactions.renumber')->middleware('can:transactions.update');
+            Route::put('supply-transactions/{transaction}', [SupplyTransactionController::class, 'update'])->whereNumber('transaction')->name('supply-transactions.update')->middleware('can:transactions.update');
+            Route::delete('supply-transactions/{transaction}', [SupplyTransactionController::class, 'destroy'])->whereNumber('transaction')->name('supply-transactions.destroy')->middleware('can:transactions.delete');
 
             // RSMI (Report of Supplies and Materials Issued)
             Route::get('/rsmi', [ReportSuppliesMaterialsIssuedController::class, 'index'])->name('rsmi.index')->middleware('can:rsmi.view');
@@ -211,6 +247,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             Route::post('/location', [LocationController::class, 'store'])->name('location.store')->middleware('can:locations.create');
             Route::put('/location/{location}', [LocationController::class, 'update'])->name('location.update')->middleware('can:locations.update');
             Route::delete('/location/{location}', [LocationController::class, 'destroy'])->name('location.destroy')->middleware('can:locations.delete');
+
+            // Property conditions (the list the property form picks from)
+            Route::get('/property-conditions', [PropertyConditionController::class, 'index'])->name('property-conditions.index')->middleware('can:property-conditions.view');
+            Route::post('/property-conditions', [PropertyConditionController::class, 'store'])->name('property-conditions.store')->middleware('can:property-conditions.create');
+            Route::put('/property-conditions/{condition}', [PropertyConditionController::class, 'update'])->name('property-conditions.update')->middleware('can:property-conditions.update');
+            Route::delete('/property-conditions/{condition}', [PropertyConditionController::class, 'destroy'])->name('property-conditions.destroy')->middleware('can:property-conditions.delete');
 
             // Properties
             Route::get('/property', [PropertyController::class, 'index'])->name('property.index')->middleware('can:properties.view');

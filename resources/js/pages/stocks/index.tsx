@@ -652,13 +652,13 @@ function CreateIarForm({
                 .map((supply) => ({
                     value: String(supply.supply_id),
                     label: supply.item_name,
+                    code: `#${supply.stock_no}`,
                     description: [
                         supply.description,
                         supply.unit_of_measurement,
                     ]
                         .filter(Boolean)
                         .join(' · '),
-                    meta: `#${supply.stock_no}`,
                 })),
         [supplies],
     );

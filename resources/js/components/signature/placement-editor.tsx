@@ -5,6 +5,7 @@ import type {
     PointerEvent as ReactPointerEvent,
 } from 'react';
 import {
+    guardImage,
     signatureStyle,
     useImageRatio,
 } from '@/components/signature/signature-box';
@@ -202,7 +203,7 @@ export function PlacementEditor({
                 <img
                     src={url}
                     alt=""
-                    draggable={false}
+                    {...guardImage}
                     {...measured}
                     className="pointer-events-none size-full object-contain select-none"
                 />

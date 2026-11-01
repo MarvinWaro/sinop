@@ -3,6 +3,7 @@ import { Settings } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
+import { SidebarNotch } from '@/components/sidebar-notch';
 import {
     Sidebar,
     SidebarContent,
@@ -48,7 +49,15 @@ export function AppSidebar() {
     );
 
     return (
-        <Sidebar collapsible="icon" variant="inset">
+        // Its own view-transition layer, so page changes don't fade it and the
+        // notch glides in plain sight (app.css).
+        <Sidebar
+            collapsible="icon"
+            variant="inset"
+            className="[view-transition-name:app-sidebar]"
+        >
+            <SidebarNotch />
+
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem>

@@ -45,6 +45,8 @@ final class RisSignaturePlacement
     /**
      * Freezes the signature on the slip: a copy of the image (so changing or
      * deleting the saved one later doesn't change the form) and its place.
+     * The copy carries the RIS number and date faintly across it, so a copy
+     * saved from the page is no use on another document.
      *
      * @param  array{id: int, x: float, y: float, width: float, rotation: float}  $input
      */
@@ -52,8 +54,10 @@ final class RisSignaturePlacement
     {
         $saved = UserSignature::query()->whereBelongsTo($signer)->findOrFail($input['id']);
         $copy = 'ris-signatures/'.Str::uuid().'.png';
+        $image = (string) Uploads::disk()->get($saved->path);
+        $stamp = Str::start((string) $risSlip->ris_no, 'RIS ').' · '.now()->timezone('Asia/Manila')->format('M j, Y');
 
-        Uploads::disk()->copy($saved->path, $copy);
+        Uploads::disk()->put($copy, SignatureStamp::apply($image, $stamp) ?? $image);
 
         $previous = $risSlip->signatures()->where('step', $step)->value('path');
 

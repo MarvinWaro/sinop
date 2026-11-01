@@ -12,7 +12,8 @@ import type { BroadcastingConfig } from '@/types';
 
 export type LiveStatus = 'connecting' | 'connected' | 'unavailable';
 
-type Listener = () => void;
+/** Gets the event's data, or nothing when run after a reconnect. */
+type Listener = (data?: unknown) => void;
 
 /** Where private channels are signed with the session (bootstrap/app.php). */
 const AUTH_URL = '/broadcasting/auth';
@@ -28,7 +29,7 @@ const statusListeners = new Set<(status: LiveStatus) => void>();
 /**
  * Hear `event` on the private `channel`. Returns the function that stops
  * listening. After a dropped connection comes back, every listener runs
- * once, since anything sent meanwhile went unheard.
+ * once (without data), since anything sent meanwhile went unheard.
  */
 export function listen(
     config: BroadcastingConfig,

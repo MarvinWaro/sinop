@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Location;
 use App\Models\Property;
+use App\Models\PropertyCondition;
 use App\Models\Role;
 use App\Models\User; // Using User model now
 use App\Services\ActivityRecorder;
@@ -14,7 +15,9 @@ use Endroid\QrCode\Logo\Logo;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter; // PDF facade
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class PropertyController extends Controller
@@ -23,46 +26,6 @@ class PropertyController extends Controller
     {
         // Load relationships: now load 'user', 'images', and 'location'
         $property->load('images', 'user', 'location');
-
-        $propertyDetails = "Property Number: {$property->property_number}\n"
-            ."Item Name: {$property->item_name}\n"
-            ."Serial Number: {$property->serial_no}\n"
-            ."Model Number: {$property->model_no}\n"
-            .'Acquisition Date: '.($property->acquisition_date ? $property->acquisition_date->format('F j, Y') : 'N/A')."\n"
-            .'Acquisition Cost: '.($property->acquisition_cost ? '₱'.number_format($property->acquisition_cost, 2) : 'N/A')."\n"
-            ."Fund: {$property->fund}\n"
-            ."Location: {$property->location->location_name}\n"
-            ."Description: {$property->item_description}\n"
-            ."Remarks: {$property->remarks}\n"
-            .'Assigned User: '.($property->user ? $property->user->name : 'N/A')."\n"
-            .'Designation: '.($property->user && $property->user->designation ? optional($property->user->designation)->name : 'N/A');
-
-        // Generate QR code with CHED logo if it doesn't exist (or was deleted on update)
-        $qrCodePath = storage_path('app/public/qrcodes/property_'.$property->id.'.png');
-        $qrCodeDir = dirname($qrCodePath);
-
-        if (! File::exists($qrCodeDir)) {
-            File::makeDirectory($qrCodeDir, 0755, true);
-        }
-
-        if (! file_exists($qrCodePath)) {
-            $qrCode = new QrCode($propertyDetails);
-            $writer = new PngWriter;
-
-            // Add CHED logo
-            $logoPath = public_path('img/ched-logo.png');
-            $logo = new Logo($logoPath, 50, 50);
-
-            $result = $writer->write(
-                $qrCode,
-                $logo,
-                null,
-                ['size' => 200]
-            );
-            $result->saveToFile($qrCodePath);
-        }
-
-        $qrCodeImage = asset('storage/qrcodes/property_'.$property->id.'.png');
 
         $property->user?->load('designation', 'department');
 
@@ -78,7 +41,6 @@ class PropertyController extends Controller
 
         return Inertia::render('properties/show', [
             'property' => $property,
-            'qrCodeImage' => $qrCodeImage,
             'holder' => [
                 'assignedCount' => $holderProperties->count(),
                 'lastAssignment' => $holderProperties->first()?->item_name,
@@ -101,21 +63,11 @@ class PropertyController extends Controller
     {
         $property = Property::with('user', 'location')->findOrFail($propertyId);
 
-        $propertyDetails = "Property Number: {$property->property_number}\n"
-            ."Item Name: {$property->item_name}\n"
-            ."Serial Number: {$property->serial_no}\n"
-            ."Model Number: {$property->model_no}\n"
-            .'Acquisition Date: '.($property->acquisition_date ? $property->acquisition_date->format('F j, Y') : 'N/A')."\n"
-            .'Acquisition Cost: '.($property->acquisition_cost ? '₱'.number_format($property->acquisition_cost, 2) : 'N/A')."\n"
-            ."Fund: {$property->fund}\n"
-            ."Condition: {$property->condition}\n"
-            ."Location: {$property->location->location_name}\n"
-            ."Description: {$property->item_description}\n"
-            ."Remarks: {$property->remarks}\n"
-            .'Assigned User: '.($property->user ? $property->user->name : 'N/A')."\n"
-            .'Designation: '.($property->user && $property->user->designation ? optional($property->user->designation)->name : 'N/A');
+        // The QR opens the property's page (public basics, full details when
+        // signed in), so it stays right when the property is edited.
+        $propertyDetails = route('property.scan', $property->property_number);
 
-        $qrCodePath = storage_path('app/public/qrcodes/property_'.$property->id.'.png');
+        $qrCodePath = storage_path('app/public/qrcodes/'.self::qrFileName($property));
         $qrCodeDir = dirname($qrCodePath);
 
         if (! File::exists($qrCodeDir)) {
@@ -137,7 +89,7 @@ class PropertyController extends Controller
             $result->saveToFile($qrCodePath);
         }
 
-        $qrCodeImage = public_path('storage/qrcodes/property_'.$property->id.'.png');
+        $qrCodeImage = $qrCodePath;
 
         $data = [
             'qrCodeImage' => $qrCodeImage,
@@ -202,11 +154,12 @@ class PropertyController extends Controller
 
     public function create()
     {
-        $locations = Location::where('excluded', 0)->get();
+        $locations = Location::where('excluded', 0)->orderBy('location_name')->get();
 
         return Inertia::render('properties/create', [
             'locations' => $locations,
             'users' => $this->assignableUsers(),
+            ...$this->formLists(),
         ]);
     }
 
@@ -216,9 +169,10 @@ class PropertyController extends Controller
         $request->merge([
             'acquisition_cost' => $request->acquisition_cost ? str_replace(',', '', $request->acquisition_cost) : null,
         ]);
+        $this->prepare($request);
 
         $request->validate([
-            'property_number' => 'required|string|unique:properties,property_number,NULL,id,excluded,0',
+            'property_number' => 'required|string|max:255|unique:properties,property_number,NULL,id,excluded,0',
             'item_name' => 'required|string|max:255',
             'item_description' => 'nullable|string',
             'serial_no' => 'nullable|string|unique:properties,serial_no',
@@ -228,9 +182,10 @@ class PropertyController extends Controller
             'unit_of_measure' => 'nullable|string|max:50',
             'quantity_per_physical_count' => 'required|integer|min:1',
             'fund' => 'nullable|string',
-            'location_id' => 'required|exists:locations,id',
+            'location_id' => 'nullable|required_without:location_name|exists:locations,id',
+            'location_name' => 'nullable|required_without:location_id|string|max:255',
             'user_id' => 'required|exists:users,id',
-            'condition' => 'required|string',
+            'condition' => 'required|string|max:50',
             'remarks' => 'nullable|string',
             'images' => 'nullable|array|max:4',
             'images.*' => 'image|max:25600',
@@ -247,6 +202,8 @@ class PropertyController extends Controller
                     ->withErrors(['serial_no' => 'Serial number is already taken among active properties.']);
             }
         }
+
+        $this->resolveLists($request);
 
         $excludedProperty = Property::where('excluded', 1)->first();
 
@@ -334,7 +291,7 @@ class PropertyController extends Controller
 
     public function edit(Property $property)
     {
-        $locations = Location::where('excluded', 0)->get();
+        $locations = Location::where('excluded', 0)->orderBy('location_name')->get();
 
         $property->load('images');
 
@@ -342,6 +299,7 @@ class PropertyController extends Controller
             'property' => $property,
             'locations' => $locations,
             'users' => $this->assignableUsers($property->user_id),
+            ...$this->formLists(),
         ]);
     }
 
@@ -350,9 +308,10 @@ class PropertyController extends Controller
         $request->merge([
             'acquisition_cost' => $request->acquisition_cost ? str_replace(',', '', $request->acquisition_cost) : null,
         ]);
+        $this->prepare($request);
 
         $request->validate([
-            'property_number' => 'required|string|unique:properties,property_number,'.$property->id,
+            'property_number' => 'required|string|max:255|unique:properties,property_number,'.$property->id,
             'item_name' => 'required|string|max:255',
             'item_description' => 'nullable|string',
             'serial_no' => 'nullable|string|unique:properties,serial_no,'.$property->id,
@@ -362,13 +321,16 @@ class PropertyController extends Controller
             'unit_of_measure' => 'nullable|string|max:50',
             'quantity_per_physical_count' => 'required|integer|min:1',
             'fund' => 'nullable|string',
-            'location_id' => 'required|exists:locations,id',
+            'location_id' => 'nullable|required_without:location_name|exists:locations,id',
+            'location_name' => 'nullable|required_without:location_id|string|max:255',
             'user_id' => 'required|exists:users,id',
-            'condition' => 'required|string',
+            'condition' => 'required|string|max:50',
             'remarks' => 'nullable|string',
             'images' => 'nullable|array|max:4',
             'images.*' => 'image|max:25600',
         ]);
+
+        $this->resolveLists($request);
 
         $property->update([
             'property_number' => $request->property_number,
@@ -391,10 +353,13 @@ class PropertyController extends Controller
             $this->notifyAssignee($property);
         }
 
-        // Remove the cached QR code so it is regenerated with the updated details
-        $cachedQr = storage_path('app/public/qrcodes/property_'.$property->id.'.png');
-        if (file_exists($cachedQr)) {
-            @unlink($cachedQr);
+        // Remove the cached QR codes (the old text one and the link one) so
+        // they are made again with the new property number.
+        foreach (['property_'.$property->id.'.png', self::qrFileName($property)] as $cached) {
+            $cachedQr = storage_path('app/public/qrcodes/'.$cached);
+            if (file_exists($cachedQr)) {
+                @unlink($cachedQr);
+            }
         }
 
         if ($request->remove_existing_images == '1') {
@@ -432,6 +397,84 @@ class PropertyController extends Controller
 
         return redirect()->route('property.index')
             ->with('success', 'Property has been removed.');
+    }
+
+    /** Where the PDF sticker's QR image is cached (it holds the scan link). */
+    private static function qrFileName(Property $property): string
+    {
+        return 'property_link_'.$property->id.'.png';
+    }
+
+    /**
+     * The form's lists besides locations and users: the conditions (an admin
+     * may type a new one), and whether this person may add a location there.
+     *
+     * @return array{conditions: Collection<int, string>, canAddLocations: bool, canAddConditions: bool}
+     */
+    private function formLists(): array
+    {
+        $user = request()->user();
+
+        return [
+            'conditions' => PropertyCondition::query()->orderBy('name')->pluck('name'),
+            'canAddLocations' => (bool) $user?->can('locations.create'),
+            'canAddConditions' => (bool) $user?->can('property-conditions.create'),
+        ];
+    }
+
+    /**
+     * Before validation (store and update): the property number in capitals,
+     * and a location typed in the form (instead of picked) tidied up. Only
+     * people who may add property locations or conditions can type new ones.
+     */
+    private function prepare(Request $request): void
+    {
+        $request->merge([
+            'property_number' => mb_strtoupper(trim((string) $request->input('property_number'))),
+            'location_name' => trim((string) preg_replace('/\s+/', ' ', (string) $request->input('location_name'))) ?: null,
+        ]);
+
+        if ($request->filled('location_name') && ! $request->user()?->can('locations.create')) {
+            throw ValidationException::withMessages([
+                'location_id' => 'Ask an admin to add this property location.',
+            ]);
+        }
+
+        $condition = trim((string) preg_replace('/\s+/', ' ', (string) $request->input('condition')));
+        $listed = $condition === '' || PropertyCondition::query()
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($condition)])
+            ->exists();
+
+        if (! $listed && ! $request->user()?->can('property-conditions.create')) {
+            throw ValidationException::withMessages([
+                'condition' => 'Ask an admin to add this condition.',
+            ]);
+        }
+    }
+
+    /**
+     * After validation: a typed location becomes a location (the active one
+     * with that name, or a new row), and the condition takes its listed
+     * spelling, adding it to the list when it's new.
+     */
+    private function resolveLists(Request $request): void
+    {
+        $locationId = $request->input('location_id');
+
+        if ($request->filled('location_name')) {
+            $name = (string) $request->input('location_name');
+
+            $locationId = Location::query()
+                ->where('excluded', 0)
+                ->whereRaw('LOWER(location_name) = ?', [mb_strtolower($name)])
+                ->value('id')
+                ?? Location::query()->create(['location_name' => $name, 'active' => 1, 'excluded' => 0])->id;
+        }
+
+        $request->merge([
+            'location_id' => (int) $locationId,
+            'condition' => PropertyCondition::resolve((string) $request->input('condition')),
+        ]);
     }
 
     /**

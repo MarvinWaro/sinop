@@ -25,22 +25,32 @@ function ByMode({ light, dark }: { light: string; dark: string }) {
  */
 export function AppearanceToggleButton({
     onToggle,
+    compact = false,
     className,
 }: {
     onToggle: () => void;
+    /** The page header's smaller, quieter size. */
+    compact?: boolean;
     className?: string;
 }) {
+    const icon = compact ? 'size-4' : 'size-5';
+
     return (
         <Tooltip>
             <TooltipTrigger asChild>
                 <Button
                     variant="ghost"
                     size="icon"
-                    className={cn('size-9', className)}
+                    className={cn(
+                        compact
+                            ? 'size-8 text-muted-foreground hover:text-foreground'
+                            : 'size-9',
+                        className,
+                    )}
                     onClick={onToggle}
                 >
-                    <Moon className="size-5 dark:hidden" />
-                    <Sun className="hidden size-5 dark:block" />
+                    <Moon className={cn(icon, 'dark:hidden')} />
+                    <Sun className={cn(icon, 'hidden dark:block')} />
                     <span className="sr-only">
                         <ByMode
                             light="Switch to dark mode"
@@ -76,6 +86,7 @@ export function AppearanceToggle({ className }: { className?: string }) {
                         : 'dark',
                 )
             }
+            compact
             className={className}
         />
     );

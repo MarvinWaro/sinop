@@ -40,7 +40,8 @@ then it checks every table's row count against the export and runs the audit.
 
 - Never run `migrate:fresh`, `migrate:reset` or `db:wipe` on a database with real data.
 - Never import an export into tables made by `migrate:fresh`. Accounts end up without roles. Use the import command.
-- `php artisan migrate:fresh --seed` gives an empty system with one account (`admin@ched.com`). Only use it to test an empty install, then rebuild.
+- `php artisan migrate:fresh --seed` gives an empty system with one Administrator (`admin@gmail.com`, password `password`; the seeder skips it in production).
+  Only use it to test an empty install, and in its own database (`sinop_fresh`), never `sinop_dev`: switch `DB_DATABASE` in `.env`.
 
 **Audit baseline** (Oct 28 export): 147 RIS numbers on several slips, 1,316 issue lines without a fund cluster,
 186 stock rows with a wrong total cost, 931 manual RIS missing from "Received supplies",
@@ -51,12 +52,18 @@ These come from the old system. The normalization batches fix them (`REFACTOR_PL
 
 ## 2. Uploaded files (S3)
 
-**What:** e-signatures (`signatures/` saved ones, `ris-signatures/` the frozen copies on signed RIS), profile photos and property images. PDFs and other files will go to the same place later.
+**What:** e-signatures (`signatures/` saved ones, `ris-signatures/` the frozen copies on signed RIS), profile photos, property images,
+and files sent in Messages (`message-attachments/`). PDFs and other files will go to the same place later.
 
 **Where:** Berth › system `sinop` › **S3** tab (Garage). Bucket `sinop`, private.
 
 **How the browser gets them:** from `/files/<path>`, through the app, for signed-in users only.
-File names are unique per upload, so the browser keeps them (no repeat downloads).
+Message attachments are the exception: they come from `/messages/attachments/<id>`, only for the people in that conversation.
+E-signatures are personal: a saved one loads only for its owner, and one on an RIS only for people who may open that RIS
+(older slips, signed before copies were frozen, load the signer's signature through `/ris/<key>/signatures/<step>`).
+File names are unique per upload, so the browser keeps them (no repeat downloads), except signatures, which are never cached.
+Signing an RIS stamps the RIS number and date faintly across the frozen copy. That needs PHP GD with FreeType
+(`gd_info()['FreeType Support']`); without it the copy is saved unstamped.
 The database still stores the same short paths as before (`signatures/abc.png`).
 
 | Setting                                                                                                        | Local (`.env`)                                       | Production (Coolify) |
@@ -108,12 +115,12 @@ Module 9 (Property) moves or replaces them.
 
 ## 3. Berth services for `sinop`
 
-| Tab       | Used for                        | Notes                                                                                                                  |
-| --------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| MySQL     | Production database `sys_sinop` | The host is an internal container name, so it only works on the VPS. From a laptop, use the Tailscale host (TablePlus) |
-| S3        | Uploaded files                  | Section 2                                                                                                              |
-| WebSocket | Live notifications (Soketi)     | `SKILL.md`. Locally the backend uses the public host                                                                   |
-| Redis     | Not used                        |                                                                                                                        |
+| Tab       | Used for                                 | Notes                                                                                                                  |
+| --------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| MySQL     | Production database `sys_sinop`          | The host is an internal container name, so it only works on the VPS. From a laptop, use the Tailscale host (TablePlus) |
+| S3        | Uploaded files                           | Section 2                                                                                                              |
+| WebSocket | Live notifications and Messages (Soketi) | `SKILL.md`. Locally the backend uses the public host                                                                   |
+| Redis     | Not used                                 |                                                                                                                        |
 
 Secrets (database password, S3 secret, Pusher secret) live only in `.env` and in Coolify. They never go into git.
 Only `PUSHER_APP_KEY` reaches the browser.
@@ -125,6 +132,7 @@ Only `PUSHER_APP_KEY` reaches the browser.
 **Environment variables**
 
 - `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://<the app's domain>`
+  (the property stickers' QR codes link to `APP_URL/p/<property no.>`, so set it before printing stickers)
 - `APP_KEY`: a new one (`php artisan key:generate --show`). Passwords don't depend on it and nobody uses two-factor, so every old login keeps working.
 - `APP_TIMEZONE=UTC`. The old system stored UTC: its transactions cluster at 00:00–09:00, which is 8 AM–5 PM in Manila.
   Keep it, so new rows match the imported ones. The screens show times in Manila time.

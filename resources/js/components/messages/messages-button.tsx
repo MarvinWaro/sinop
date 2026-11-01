@@ -1,7 +1,5 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { MessageSquare } from 'lucide-react';
-import { useMessagesSide } from '@/components/messages/message-parts';
-import { sampleConversationsFor } from '@/components/messages/sample-conversations';
 import { badgeLabel } from '@/components/notifications/notification-bell';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,13 +9,12 @@ import {
 } from '@/components/ui/tooltip';
 import { index as messagesIndex } from '@/routes/messages';
 
-/** Header shortcut to Messages, beside the notification bell. */
+/**
+ * Header shortcut to Messages, beside the notification bell, with the
+ * number of unread messages (kept current by useInboxUpdates).
+ */
 export function MessagesButton() {
-    // The preview's unread count (sample data until Messages is built).
-    const unread = sampleConversationsFor(useMessagesSide()).reduce(
-        (sum, conversation) => sum + conversation.unread,
-        0,
-    );
+    const unread = usePage().props.messagesUnread ?? 0;
     const label = unread > 0 ? `Messages, ${unread} unread` : 'Messages';
 
     return (
@@ -27,12 +24,12 @@ export function MessagesButton() {
                     asChild
                     variant="ghost"
                     size="icon"
-                    className="relative size-9"
+                    className="relative size-8 text-muted-foreground hover:text-foreground"
                 >
                     <Link href={messagesIndex()} aria-label={label}>
-                        <MessageSquare className="size-5" />
+                        <MessageSquare className="size-4" />
                         {unread > 0 && (
-                            <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground tabular-nums">
+                            <span className="absolute top-0.5 right-0 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-alert px-1 text-[9px] leading-none font-semibold text-white tabular-nums shadow-alert ring-2 ring-background">
                                 {badgeLabel(unread)}
                             </span>
                         )}

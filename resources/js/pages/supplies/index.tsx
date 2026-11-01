@@ -267,7 +267,7 @@ function SupplyForm({
         description: supply?.description ?? '',
         unit_of_measurement: supply?.unit_of_measurement ?? '',
         category_id: supply?.category_id ? String(supply.category_id) : '',
-        reorder_point: supply ? String(supply.reorder_point) : '0',
+        reorder_point: supply ? String(supply.reorder_point) : '',
         acquisition_cost: supply ? supply.acquisition_cost : '',
     });
 
@@ -402,17 +402,17 @@ function SupplyForm({
                     label="Reorder point"
                     htmlFor="reorder_point"
                     error={form.errors.reorder_point}
-                    required
+                    hint="Optional. Blank means 0."
                 >
                     <Input
                         id="reorder_point"
                         type="number"
                         min={0}
+                        placeholder="0"
                         value={form.data.reorder_point}
                         onChange={(e) =>
                             form.setData('reorder_point', e.target.value)
                         }
-                        required
                     />
                 </FormField>
                 <FormField

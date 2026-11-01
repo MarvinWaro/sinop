@@ -59,6 +59,7 @@
         .stock-table th {
             background-color: #ffffff;
             font-weight: normal;
+            text-transform: uppercase;
         }
         .stock-header {
             height: 30px;

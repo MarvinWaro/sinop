@@ -1,8 +1,7 @@
 import { router } from '@inertiajs/react';
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { SearchInput } from '@/components/search-input';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 type QueryValue = string | number | null | undefined;
@@ -19,6 +18,9 @@ type Props = {
     className?: string;
 };
 
+/** How long typing has to pause before the list reloads. */
+const TYPING_PAUSE_MS = 350;
+
 function cleanParams(
     params: Record<string, QueryValue>,
 ): Record<string, string | number> {
@@ -30,6 +32,31 @@ function cleanParams(
     ) as Record<string, string | number>;
 }
 
+/**
+ * Runs the latest scheduled callback once calls stop for `delay` ms (a pause
+ * in typing). `cancel` drops a pending run, e.g. when applying right away.
+ */
+export function useTypingPause(delay = TYPING_PAUSE_MS) {
+    const timer = useRef<number | undefined>(undefined);
+
+    useEffect(() => () => window.clearTimeout(timer.current), []);
+
+    return useMemo(
+        () => ({
+            schedule: (run: () => void) => {
+                window.clearTimeout(timer.current);
+                timer.current = window.setTimeout(run, delay);
+            },
+            cancel: () => window.clearTimeout(timer.current),
+        }),
+        [delay],
+    );
+}
+
+/**
+ * Server-side search box that searches as you type: the list reloads once
+ * typing pauses, and right away on Enter or when cleared.
+ */
 export function SearchForm({
     url,
     defaultValue,
@@ -39,13 +66,38 @@ export function SearchForm({
     className,
 }: Props) {
     const [value, setValue] = useState(defaultValue ?? '');
+    const pause = useTypingPause();
+    // The search the list is showing, so a pause or Enter doesn't reload it.
+    const applied = useRef((defaultValue ?? '').trim());
+    // A run scheduled before another filter changed uses the new filters.
+    const latestParams = useRef(params);
+
+    useEffect(() => {
+        latestParams.current = params;
+    });
 
     const visit = (search: string) => {
-        router.get(url, cleanParams({ ...params, [name]: search }), {
-            preserveState: true,
-            preserveScroll: true,
-            replace: true,
-        });
+        pause.cancel();
+
+        if (search === applied.current) {
+            return;
+        }
+
+        applied.current = search;
+        router.get(
+            url,
+            cleanParams({ ...latestParams.current, [name]: search }),
+            {
+                preserveState: true,
+                preserveScroll: true,
+                replace: true,
+            },
+        );
+    };
+
+    const change = (next: string) => {
+        setValue(next);
+        pause.schedule(() => visit(next.trim()));
     };
 
     const submit = (event: FormEvent) => {
@@ -56,11 +108,12 @@ export function SearchForm({
     return (
         <form
             onSubmit={submit}
+            role="search"
             className={cn('flex w-full gap-2 sm:w-auto', className)}
         >
             <SearchInput
                 value={value}
-                onValueChange={setValue}
+                onValueChange={change}
                 onClear={() => {
                     setValue('');
                     visit('');
@@ -69,9 +122,6 @@ export function SearchForm({
                 aria-label={placeholder}
                 className="flex-1 sm:w-72"
             />
-            <Button type="submit" variant="secondary">
-                Search
-            </Button>
         </form>
     );
 }

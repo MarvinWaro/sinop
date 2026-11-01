@@ -34,7 +34,7 @@ enum ActivityModule: string
             self::Designations => 'Designations',
             self::Categories => 'Categories',
             self::Suppliers => 'Suppliers',
-            self::Locations => 'Locations',
+            self::Locations => 'Property locations',
             self::Supplies => 'Supplies',
             self::Stocks => 'Stocks (IAR)',
             self::Transactions => 'Transactions',
