@@ -1,5 +1,6 @@
-import { Link, usePage } from '@inertiajs/react';
+import { Link, router, usePage } from '@inertiajs/react';
 import { Settings } from 'lucide-react';
+import { useEffect } from 'react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
@@ -12,6 +13,7 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    useSidebar,
 } from '@/components/ui/sidebar';
 import { useCan } from '@/hooks/use-can';
 import { useCurrentUrl } from '@/hooks/use-current-url';
@@ -30,6 +32,14 @@ const settingsItems = [...accountSettingsNav.items, ...adminSettingsItems];
 
 export function AppSidebar() {
     const { auth } = usePage().props;
+    const { setOpenMobile } = useSidebar();
+
+    // On phones the sidebar is a drawer: close it as soon as a link is
+    // followed, so the new page isn't hidden behind it.
+    useEffect(
+        () => router.on('start', () => setOpenMobile(false)),
+        [setOpenMobile],
+    );
     const groups = useNavigation();
     const can = useCan();
     const { isCurrentOrParentUrl } = useCurrentUrl();
